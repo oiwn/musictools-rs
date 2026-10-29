@@ -487,7 +487,7 @@ impl IgorekEditor {
         painter.rect_stroke(
             rect,
             3.0,
-            Stroke::new(1.0, theme::BACKGROUND),
+            Stroke::new(1.0_f32, theme::BACKGROUND),
             egui::StrokeKind::Inside,
         );
 
@@ -514,7 +514,7 @@ impl IgorekEditor {
                     })
                     .collect();
                 if points.len() > 1 {
-                    painter.add(Shape::line(points, Stroke::new(1.2, color)));
+                    painter.add(Shape::line(points, Stroke::new(1.2_f32, color)));
                 }
             }
         } else {
@@ -541,7 +541,7 @@ impl IgorekEditor {
         for x in [sel_x0, sel_x1] {
             painter.line_segment(
                 [Pos2::new(x, inner.top()), Pos2::new(x, inner.bottom())],
-                Stroke::new(1.0, selection_edge()),
+                Stroke::new(1.0_f32, selection_edge()),
             );
         }
 
@@ -553,7 +553,7 @@ impl IgorekEditor {
         let c_pos = Pos2::new(sel_x1, env_db_to_y(env_c, inner));
         painter.add(Shape::line(
             vec![a_pos, b_pos, c_pos],
-            Stroke::new(1.6, ENVELOPE_LINE),
+            Stroke::new(1.6_f32, ENVELOPE_LINE),
         ));
 
         let handles = [

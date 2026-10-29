@@ -1,0 +1,72 @@
+# specdev project config.
+
+[task]
+# Sections every task file must have; `task new` creates them.
+required_sections = ["Plan", "Acceptance"]
+optional_sections = ["Summary", "Manual checks", "Context", "Findings", "Review", "Spec updates"]
+# Project-specific optional frontmatter fields.
+extra_fields = []
+# Tasks are created only when the user asks for one; small fixes are direct
+# edits. While true, working-tree out-of-scope findings are warnings.
+# false restores task-per-small-change and makes out-of-scope an error.
+explicit_only = true
+
+[pipeline]
+# Failed verifies (verify → fix) before a task is blocked; revisions don't count.
+max_attempts = 3
+
+[acceptance]
+# Acceptance items every task gets. specdev never runs them; the agent does.
+# Mirrors the prek.toml hooks and the commands in AGENTS.md.
+default = [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-features",
+    "typos",
+    "gitleaks git --verbose",
+]
+
+[scope]
+# Globs never flagged as out of scope. specs/ is always allowed.
+always_allowed = ["Cargo.lock", "Cargo.toml", "truce.toml"]
+
+[quality]
+# Threshold violations are warnings; true makes them errors.
+errors = false
+# Flag Markdown tables and ASCII box diagrams in specs/ and task files.
+forbid_tables = true
+
+# Per file kind. Keys: max_lines, max_words, max_plan_steps, max_scope.
+# Omitted keys keep these defaults; 0 turns a limit off.
+# max_words catches soft-wrapped files whose line count stays low.
+[quality.task]
+max_lines = 150
+max_words = 1000
+max_plan_steps = 8
+max_scope = 6
+
+# Optional size grades a task can declare (`specdev task set <id> grade <name>`).
+# Keys set here win; the rest inherit from [quality.task] above; 0 turns a limit off.
+[quality.grade.tiny]
+max_lines = 80
+max_words = 500
+max_plan_steps = 5
+max_scope = 3
+
+[quality.grade.huge]
+max_lines = 300
+max_words = 2500
+max_plan_steps = 12
+max_scope = 12
+
+[quality.ctx]
+max_lines = 120
+max_words = 600
+
+[quality.overview]
+max_lines = 200
+max_words = 1500
+
+[quality.changelog]
+max_lines = 400
+max_words = 3000

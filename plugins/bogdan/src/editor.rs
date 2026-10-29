@@ -42,7 +42,7 @@ impl ScopeHistory {
     }
 
     fn ingest_interleaved(&mut self, interleaved: &[f32]) {
-        for pair in interleaved.chunks_exact(2) {
+        for pair in interleaved.as_chunks::<2>().0 {
             if self.frames.len() == HISTORY_SAMPLES {
                 let _ = self.frames.pop_front();
             }
@@ -93,7 +93,7 @@ impl BogdanEditor {
         painter.rect_stroke(
             rect,
             6.0,
-            Stroke::new(1.0, GRID_COLOR),
+            Stroke::new(1.0_f32, GRID_COLOR),
             egui::StrokeKind::Inside,
         );
 
@@ -103,7 +103,7 @@ impl BogdanEditor {
                 Pos2::new(plot.left(), plot.center().y),
                 Pos2::new(plot.right(), plot.center().y),
             ],
-            Stroke::new(1.0, GRID_COLOR),
+            Stroke::new(1.0_f32, GRID_COLOR),
         );
 
         let safe_ceiling = finite_sample(ceiling).abs().max(f32::MIN_POSITIVE);
@@ -112,7 +112,7 @@ impl BogdanEditor {
             let y = sample_y(polarity * safe_ceiling, vertical_extent, plot);
             painter.line_segment(
                 [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-                Stroke::new(1.0, METER_CLIP),
+                Stroke::new(1.0_f32, METER_CLIP),
             );
         }
 
@@ -130,10 +130,13 @@ impl BogdanEditor {
                 ));
             }
             if driven.len() > 1 {
-                painter.add(egui::Shape::line(driven, Stroke::new(1.2, DRIVEN_COLOR)));
+                painter.add(egui::Shape::line(
+                    driven,
+                    Stroke::new(1.2_f32, DRIVEN_COLOR),
+                ));
                 painter.add(egui::Shape::line(
                     processed,
-                    Stroke::new(1.6, PROCESSED_COLOR),
+                    Stroke::new(1.6_f32, PROCESSED_COLOR),
                 ));
             }
         }
@@ -240,7 +243,7 @@ fn draw_legend(painter: &egui::Painter, plot: Rect) {
             Pos2::new(driven_left, top + 5.0),
             Pos2::new(driven_left + 14.0, top + 5.0),
         ],
-        Stroke::new(1.5, DRIVEN_COLOR),
+        Stroke::new(1.5_f32, DRIVEN_COLOR),
     );
     painter.text(
         Pos2::new(driven_left + 19.0, top),
@@ -256,7 +259,7 @@ fn draw_legend(painter: &egui::Painter, plot: Rect) {
             Pos2::new(processed_left, top + 5.0),
             Pos2::new(processed_left + 14.0, top + 5.0),
         ],
-        Stroke::new(1.5, PROCESSED_COLOR),
+        Stroke::new(1.5_f32, PROCESSED_COLOR),
     );
     painter.text(
         Pos2::new(processed_left + 19.0, top),

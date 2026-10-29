@@ -71,5 +71,7 @@ validation notes for audio behavior changes.
 This project uses **specdev** (specification-driven development). Load the
 specdev skill when starting a session, continuing from specs, or picking up a
 task. Always read `specs/overview.md` and `specs/ctx.md` before coding, plus the
-`specs/<plugin>.md` for whichever plugin you are touching.
+`specs/<plugin>.md` for whichever plugin you are touching. Task files live in
+`specs/tasks/` and their state moves only through the `specdev` CLI; the task
+contract, acceptance defaults, and size limits are in `specdev.toml`.
 <!-- END specdev -->

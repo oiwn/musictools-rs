@@ -254,7 +254,7 @@ impl KiryaEditor {
             let y = level_y(db, plot);
             painter.line_segment(
                 [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-                Stroke::new(1.0, GRID_COLOR),
+                Stroke::new(1.0_f32, GRID_COLOR),
             );
             painter.text(
                 Pos2::new(plot.left() + 2.0, y + 1.0),
@@ -293,7 +293,7 @@ impl KiryaEditor {
                     Pos2::new(plot.left() + fraction * plot.width(), level_y(db, plot))
                 })
                 .collect();
-            painter.add(egui::Shape::line(points, Stroke::new(1.4, color)));
+            painter.add(egui::Shape::line(points, Stroke::new(1.4_f32, color)));
         }
 
         let readout = match render.rt60_seconds {
@@ -353,7 +353,7 @@ impl KiryaEditor {
             let y = frequency_y(hz, plot);
             painter.line_segment(
                 [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-                Stroke::new(1.0, GRID_COLOR.gamma_multiply(0.7)),
+                Stroke::new(1.0_f32, GRID_COLOR.gamma_multiply(0.7)),
             );
             painter.text(
                 Pos2::new(plot.left() + 2.0, y - 1.0),
@@ -376,7 +376,7 @@ fn panel(ui: &mut egui::Ui, height: f32) -> (Rect, Rect) {
     painter.rect_stroke(
         rect,
         6.0,
-        Stroke::new(1.0, GRID_COLOR),
+        Stroke::new(1.0_f32, GRID_COLOR),
         egui::StrokeKind::Inside,
     );
     (rect, rect.shrink(6.0))
@@ -438,7 +438,7 @@ fn time_ruler(painter: &egui::Painter, plot: Rect, duration: f32) {
                 Pos2::new(x, plot.bottom() - 4.0),
                 Pos2::new(x, plot.bottom()),
             ],
-            Stroke::new(1.0, GRID_COLOR),
+            Stroke::new(1.0_f32, GRID_COLOR),
         );
         // Sub-second steps need a decimal; whole-second ones read better
         // without one.

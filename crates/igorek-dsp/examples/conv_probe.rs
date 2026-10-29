@@ -55,7 +55,7 @@ fn main() {
         let mut block_in = [0.0_f32; P];
         let mut block_out = [0.0_f32; P];
         let mut deviation = 0.0_f64;
-        for (b, chunk) in input.chunks_exact(P).enumerate() {
+        for (b, chunk) in input.as_chunks::<P>().0.iter().enumerate() {
             block_in.copy_from_slice(chunk);
             engine.process_block(&block_in, &mut block_out);
             for (t, &got) in block_out.iter().enumerate() {

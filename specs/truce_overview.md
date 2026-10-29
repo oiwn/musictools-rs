@@ -1,15 +1,10 @@
 # Truce Framework Reference
 
-General, project-agnostic notes on building plugins with **Truce `6.3.0`** (the
-audio-plugin framework this workspace targets). Snippets are distilled from the
-`truce`, `truce-params`, `truce-derive`, and `truce-egui` crate sources plus the
-working plugin in this repo. Keep this file free of task-specific detail — it is
-a cheat-sheet so we stop re-deriving the API each time.
+General, project-agnostic notes on building plugins with **Truce `6.3.0`** (the audio-plugin framework this workspace targets). Snippets are distilled from the `truce`, `truce-params`, `truce-derive`, and `truce-egui` crate sources plus the working plugin in this repo. Keep this file free of task-specific detail — it is a cheat-sheet so we stop re-deriving the API each time.
 
 ## Crates & workspace wiring
 
-Version-pin everything to the same Truce release in the workspace root
-`Cargo.toml`:
+Version-pin everything to the same Truce release in the workspace root `Cargo.toml`:
 
 ```toml
 truce      = { version = "=6.3.0" }
@@ -39,14 +34,9 @@ Everyday imports come from the prelude:
 use truce::prelude::*;
 ```
 
-The prelude re-exports: the derives `Params`, `ParamEnum`, `State`; the param
-types `FloatParam`, `IntParam`, `BoolParam`, `EnumParam`, `MeterSlot`; helpers
-`db_to_linear`, `linear_to_db`, `midi_note_to_freq`, `meter_display`;
-`AudioTap`, `Arc`, `TAU`; and the plugin/process types used below.
+The prelude re-exports: the derives `Params`, `ParamEnum`, `State`; the param types `FloatParam`, `IntParam`, `BoolParam`, `EnumParam`, `MeterSlot`; helpers `db_to_linear`, `linear_to_db`, `midi_note_to_freq`, `meter_display`; `AudioTap`, `Arc`, `TAU`; and the plugin/process types used below.
 
-Framework-independent DSP should live in its own crate that does **not** depend
-on `truce`, so it can be unit-tested and A/B-compared without a host. The
-`truce` wrapper crate stays thin.
+Framework-independent DSP should live in its own crate that does **not** depend on `truce`, so it can be unit-tested and A/B-compared without a host. The `truce` wrapper crate stays thin.
 
 ## Minimal plugin skeleton
 
@@ -113,9 +103,7 @@ truce::enable_rt_paranoid!(); // no-op unless the `rt-paranoid` feature is on
 
 ## Parameters (`#[derive(Params)]`)
 
-Each field is one param. `id` must be stable forever (host automation/preset
-key). `#[skip]` marks a non-param field (e.g. an `Arc<AudioTap<f32>>`); the
-derive also accepts `#[nested]`/`#[meter]`/`#[persist]`.
+Each field is one param. `id` must be stable forever (host automation/preset key). `#[skip]` marks a non-param field (e.g. an `Arc<AudioTap<f32>>`); the derive also accepts `#[nested]`/`#[meter]`/`#[persist]`.
 
 ```rust
 #[derive(Params)]
@@ -135,38 +123,29 @@ pub struct P {
 
 ### Range strings (`range = "..."`)
 
-| String                     | `ParamRange`             | Notes |
-|----------------------------|--------------------------|-------|
-| `linear(min, max)`         | `Linear`                 | plain linear map |
-| `log(min, max)`            | `Logarithmic`            | strictly positive bounds; good for Hz |
-| `skewed(min, max, factor)` | `Skewed`                 | `factor<1` gives the low end more knob travel |
-| `sym_skewed(min,max,f,c)`  | `SymmetricalSkewed`      | center-detented (pan, EQ gain) |
-| *(omit for `EnumParam`)*   | `Enum { count }`         | auto from `variant_count()` |
-| *(IntParam)*               | `Discrete { min, max }`  | integer steps |
+- **`linear(min, max)`** → `ParamRange::Linear` — plain linear map.
+- **`log(min, max)`** → `ParamRange::Logarithmic` — strictly positive bounds; good for Hz.
+- **`skewed(min, max, factor)`** → `ParamRange::Skewed` — `factor < 1` gives the low end more knob travel.
+- **`sym_skewed(min, max, f, c)`** → `ParamRange::SymmetricalSkewed` — center-detented (pan, EQ gain).
+- **omit it for an `EnumParam`** → `ParamRange::Enum { count }` — auto from `variant_count()`.
+- **`IntParam`** → `ParamRange::Discrete { min, max }` — integer steps.
 
 ### Other `#[param]` keys
 
 - `smooth = "exp(ms)"` — one-pole (multiplicative) smoothing.
 - `smooth = "log(ms)"` — logarithmic smoothing. Omit for no smoothing.
 - `unit = "dB" | "Hz" | "%" | ...` — display unit (`ParamUnit`).
-- `default = <plain value>` — for `EnumParam`, a **0-indexed variant integer**
-  (non-integer/out-of-range panics at construction).
+- `default = <plain value>` — for `EnumParam`, a **0-indexed variant integer** (non-integer/out-of-range panics at construction).
 
 ### Reading params in `process`
 
-- `FloatParam::read() -> f32` — returns the smoothed value **and advances the
-  smoother one tick**. Call exactly **once per sample frame** (not once per
-  channel), or smoothing runs at the wrong rate.
+- `FloatParam::read() -> f32` — returns the smoothed value **and advances the smoother one tick**. Call exactly **once per sample frame** (not once per channel), or smoothing runs at the wrong rate.
 - `IntParam::value() -> i64`, `BoolParam::value() -> bool`.
-- `EnumParam::<E>::value() -> E` (atomic load, RT-safe), also `.index() -> u32`,
-  `.set_value(E)`, `.set_index(u32)` (clamps to the last variant).
+- `EnumParam::<E>::value() -> E` (atomic load, RT-safe), also `.index() -> u32`, `.set_value(E)`, `.set_index(u32)` (clamps to the last variant).
 
 ### Enum params (`#[derive(ParamEnum)]`)
 
-Derive on a C-like (unit-variant) enum. It generates `Clone, Copy, PartialEq,
-Eq` plus the 5 `ParamEnum` methods. Display name defaults to the variant ident;
-override with `#[name = "..."]`. Keep the framework enum in the wrapper crate
-and map it to a plain DSP-crate enum so the DSP crate stays truce-free.
+Derive on a C-like (unit-variant) enum. It generates `Clone, Copy, PartialEq, Eq` plus the 5 `ParamEnum` methods. Display name defaults to the variant ident; override with `#[name = "..."]`. Keep the framework enum in the wrapper crate and map it to a plain DSP-crate enum so the DSP crate stays truce-free.
 
 ```rust
 #[derive(ParamEnum)]
@@ -178,9 +157,7 @@ pub enum Mode {
 }
 ```
 
-The `Params` derive also generates a param-id enum named
-`<StructName>ParamId` (e.g. `MyParamsParamId`), commonly imported as `P` and
-used by the editor and `get_param_*` calls.
+The `Params` derive also generates a param-id enum named `<StructName>ParamId` (e.g. `MyParamsParamId`), commonly imported as `P` and used by the editor and `get_param_*` calls.
 
 ## Audio processing contract
 
@@ -188,27 +165,19 @@ used by the editor and `get_param_*` calls.
 - `buffer.io(ch) -> (&[f32] input, &mut [f32] output)` — per-channel slices.
 - Return `ProcessStatus::Normal`.
 - `AudioConfig { sample_rate: f64, max_block_size: usize }` arrives in `reset`.
-- **Real-time rule:** no allocation, locks, or I/O in `process`. Size all
-  buffers in `reset`. `PRESERVE_DSP_STATE` controls whether state survives a
-  reset.
-- `PluginLogic::latency() -> u32` (default 0) reports processing latency in
-  samples for host delay compensation — used by Igorek (128 samples).
+- **Real-time rule:** no allocation, locks, or I/O in `process`. Size all buffers in `reset`. `PRESERVE_DSP_STATE` controls whether state survives a reset.
+- `PluginLogic::latency() -> u32` (default 0) reports processing latency in samples for host delay compensation — used by Igorek (128 samples).
 
 ### Custom state (`custom_state`)
 
-`truce::custom_state` persists non-param data (e.g. Igorek's loaded Color IR)
-inside the host session blob:
+`truce::custom_state` persists non-param data (e.g. Igorek's loaded Color IR) inside the host session blob:
 
-- `#[derive(State)]` on a `Default` struct; fields implement `StateField`
-  (`write_field` / `read_field`, binary-friendly). Absent/old fields load as
-  `Default`, so adding fields is migration-safe.
-- `StateBinding<T>::new(&PluginContext)` then `sync()` / `get()` / `update()`;
-  `serialize_into(&mut Vec<u8>)` is the allocation-free form once warmed.
+- `#[derive(State)]` on a `Default` struct; fields implement `StateField` (`write_field` / `read_field`, binary-friendly). Absent/old fields load as `Default`, so adding fields is migration-safe.
+- `StateBinding<T>::new(&PluginContext)` then `sync()` / `get()` / `update()`; `serialize_into(&mut Vec<u8>)` is the allocation-free form once warmed.
 
 ### Wait-free audio→GUI streaming: `AudioTap<T>`
 
-Lock-free SPSC ring for pushing samples to the editor. Hold it as an `Arc` in
-the params struct (`#[skip]`) so both the audio thread and editor reach it.
+Lock-free SPSC ring for pushing samples to the editor. Hold it as an `Arc` in the params struct (`#[skip]`) so both the audio thread and editor reach it.
 
 ```rust
 // audio thread (process): push interleaved frames from a preallocated buffer
@@ -256,14 +225,9 @@ pub(crate) fn create(params: Arc<MyParams>) -> Box<dyn Editor> {
 ```
 
 Notes:
-- `PluginContext<P>` is passed to editor callbacks and `Deref`s to the params
-  struct, so `#[skip]` fields like `scope_tap` are reachable directly.
-- `state.get_param_plain(P::X) -> f64` reads a param's current plain value for
-  drawing.
-- `param_knob(ui, state, P::X, "Label")` is the stock knob widget for a float
-  param. The built-in `GridLayout` renders only param widgets/meters at a small
-  fixed size (~140×120); for custom drawing (scopes, meters) implement
-  `EditorUi` and paint with `egui::Painter` as above.
+- `PluginContext<P>` is passed to editor callbacks and `Deref`s to the params struct, so `#[skip]` fields like `scope_tap` are reachable directly.
+- `state.get_param_plain(P::X) -> f64` reads a param's current plain value for drawing.
+- `param_knob(ui, state, P::X, "Label")` is the stock knob widget for a float param. The built-in `GridLayout` renders only param widgets/meters at a small fixed size (~140×120); for custom drawing (scopes, meters) implement `EditorUi` and paint with `egui::Painter` as above.
 - `egui` is used directly (`use egui::...`) alongside the truce-egui helpers.
 
 ## Testing & RT verification
@@ -303,15 +267,9 @@ assert_eq!(allocations, 0);
 
 ## Gotchas
 
-- **No drag'n'drop in truce-egui 6.3.** Window events come from the
-  `baseview-truce` fork, whose `WindowEvent` enum is only
-  `Resized / Focused / Unfocused / WillClose` — no file-drop variants, so
-  egui's `dropped_files` can never populate. Use a native `rfd` dialog on a
-  helper thread (dialogs block) for file loading.
+- **No drag'n'drop in truce-egui 6.3.** Window events come from the `baseview-truce` fork, whose `WindowEvent` enum is only `Resized / Focused / Unfocused / WillClose` — no file-drop variants, so egui's `dropped_files` can never populate. Use a native `rfd` dialog on a helper thread (dialogs block) for file loading.
 - `id` values are a permanent contract — never renumber an existing param.
-- Call each smoothed `FloatParam::read()` once per frame, before the channel
-  loop, and reuse the value for every channel.
+- Call each smoothed `FloatParam::read()` once per frame, before the channel loop, and reuse the value for every channel.
 - Keep `EnumParam` defaults as integer variant indices.
-- Do the drive/ceiling `db_to_linear` conversion in the wrapper; keep the DSP
-  crate in linear amplitude and framework-free.
+- Do the drive/ceiling `db_to_linear` conversion in the wrapper; keep the DSP crate in linear amplitude and framework-free.
 - Build/verify both bundles: `--features clap` and `--features vst3`.

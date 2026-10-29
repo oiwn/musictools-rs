@@ -227,7 +227,7 @@ mod tests {
             .scope_tap
             .drain_with(|samples| tapped.extend_from_slice(samples));
         assert_eq!(tapped.len(), left_input.len() * 2);
-        for (index, pair) in tapped.chunks_exact(2).enumerate() {
+        for (index, pair) in tapped.as_chunks::<2>().0.iter().enumerate() {
             assert_eq!(pair[0], left_input[index]);
             assert_eq!(pair[1], left_output[index]);
         }

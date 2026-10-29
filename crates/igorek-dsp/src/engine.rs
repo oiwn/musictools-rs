@@ -276,7 +276,7 @@ mod tests {
         let mut out = Vec::with_capacity(input.len());
         let mut block_in = [0.0_f32; P];
         let mut block_out = [0.0_f32; P];
-        for chunk in input.chunks_exact(P) {
+        for chunk in input.as_chunks::<P>().0 {
             block_in.copy_from_slice(chunk);
             engine.process_block(&block_in, &mut block_out);
             out.extend_from_slice(&block_out);
@@ -338,7 +338,7 @@ mod tests {
             &mut rng, 200,
         ))));
         let mut block_out = [0.0_f32; P];
-        for (i, chunk) in input.chunks_exact(P).enumerate() {
+        for (i, chunk) in input.as_chunks::<P>().0.iter().enumerate() {
             if i == 2 {
                 engine.install(Box::new(ChannelSpectra::from_time_ir(&noise(
                     &mut rng, 500,
@@ -359,12 +359,12 @@ mod tests {
         ))));
         let mut block_in = [0.0_f32; P];
         let mut block_out = [0.0_f32; P];
-        for chunk in input.chunks_exact(P) {
+        for chunk in input.as_chunks::<P>().0 {
             block_in.copy_from_slice(chunk);
             engine.process_block(&block_in, &mut block_out);
         }
         engine.install(Box::new(ChannelSpectra::identity()));
-        for chunk in input.chunks_exact(P) {
+        for chunk in input.as_chunks::<P>().0 {
             block_in.copy_from_slice(chunk);
             engine.process_block(&block_in, &mut block_out);
             for (&o, &i) in block_out.iter().zip(chunk) {
