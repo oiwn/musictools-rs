@@ -8,11 +8,19 @@
 //!
 //! The living version of this kit is `cargo run -p neon-ui --example showcase`.
 
+/// Param bindings over nice-plug, behind the `nice-plug` feature.
+#[cfg(feature = "nice-plug")]
+pub mod bindings;
 pub mod button;
 pub mod glow;
+pub mod grid;
+pub mod header;
 pub mod knob;
+pub mod meter;
 pub mod palette;
+pub mod select;
 pub mod slider;
 pub mod surface;
+pub mod tabs;
 pub mod value_entry;
 pub mod visuals;

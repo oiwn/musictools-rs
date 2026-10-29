@@ -1,12 +1,19 @@
-//! Truce wrapper for the Bogdan detail-preserving clipper.
+//! nice-plug wrapper for the Bogdan detail-preserving clipper.
+
+use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use bogdan_dsp::{ClipMode, DetailClipper, DetailSettings, FoldShape};
-use truce::prelude::*;
+use musictools_core::scope_tap::ScopeTap;
+use nice_plug::prelude::*;
 
 mod editor;
 
+/// Scope history the tap keeps: matches the editor's frame history.
+const SCOPE_TAP_CAPACITY: usize = 2 * 8_192;
+
 /// Peak-reshaping voice, mirrors [`bogdan_dsp::ClipMode`] on the framework side.
-#[derive(ParamEnum)]
+#[derive(Enum, Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
     Clean,
     Detail,
@@ -24,7 +31,7 @@ impl Mode {
 }
 
 /// Wavefolder transfer function, mirrors [`bogdan_dsp::FoldShape`].
-#[derive(ParamEnum)]
+#[derive(Enum, Clone, Copy, Debug, PartialEq)]
 pub enum Shape {
     Sine,
     Triangle,
@@ -41,70 +48,78 @@ impl Shape {
 
 #[derive(Params)]
 pub struct BogdanParams {
-    #[param(
-        id = 0,
-        name = "Drive",
-        range = "linear(0, 24)",
-        default = 0,
-        unit = "dB",
-        smooth = "exp(5)"
-    )]
+    #[id = "drive"]
     pub drive: FloatParam,
 
-    #[param(
-        id = 1,
-        name = "Ceiling",
-        range = "linear(-24, 0)",
-        default = -0.1,
-        unit = "dB",
-        smooth = "exp(5)"
-    )]
+    #[id = "ceiling"]
     pub ceiling: FloatParam,
 
-    /// Peak-reshaping mode. Defaults to `Detail` (variant index 1).
-    #[param(id = 2, name = "Mode", default = 1)]
+    #[id = "mode"]
     pub mode: EnumParam<Mode>,
 
-    /// Clipping-delta high-pass cutoff. Low values fold the peak shape inward;
-    /// high values isolate fast edge detail (the classic Detail voice).
-    #[param(
-        id = 3,
-        name = "Detail",
-        range = "log(20, 2000)",
-        default = 1000,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "exp(20)"
-    )]
+    #[id = "detail"]
     pub detail: FloatParam,
 
-    /// Effect depth: 0% is a plain clip, 100% is full motion (inward duck for
-    /// Detail, clip→fold blend for Fold).
-    #[param(
-        id = 4,
-        name = "Amount",
-        range = "linear(0, 1)",
-        default = 1,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "amount"]
     pub amount: FloatParam,
 
-    /// Wavefolder transfer function (Fold mode only). Defaults to `Sine`.
-    #[param(id = 5, name = "Shape", default = 0)]
+    #[id = "shape"]
     pub shape: EnumParam<Shape>,
 
     /// Interleaved `[driven, processed]` frames for the oscilloscope.
-    #[skip]
-    scope_tap: Arc<AudioTap<f32>>,
+    pub scope_tap: Arc<ScopeTap<f32>>,
 }
 
-impl BogdanParams {
-    /// Display formatter for the Detail cutoff, named by `#[param(format)]`.
-    /// Shared with Kirya so both plugins print frequencies the same way.
-    #[allow(clippy::unused_self)]
-    fn format_hz_param(&self, value: f64) -> String {
-        musictools_core::format_hz(value)
+impl Default for BogdanParams {
+    fn default() -> Self {
+        let format_hz = |value: f32| musictools_core::format_hz(f64::from(value));
+        Self {
+            drive: FloatParam::new(
+                "Drive",
+                0.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 24.0,
+                },
+            )
+            .with_smoother(SmoothingStyle::Exponential(5.0))
+            .with_unit(" dB")
+            .with_step_size(0.01),
+            ceiling: FloatParam::new(
+                "Ceiling",
+                -0.1,
+                FloatRange::Linear {
+                    min: -24.0,
+                    max: 0.0,
+                },
+            )
+            .with_smoother(SmoothingStyle::Exponential(5.0))
+            .with_unit(" dB")
+            .with_step_size(0.01),
+            mode: EnumParam::new("Mode", Mode::Detail),
+            // The truce range was `log(20, 2000)`. `Skewed` normalizes as
+            // ((v-min)/(max-min)).powf(factor), so factor 0.232 puts the
+            // 1000 Hz default at ~85% of knob travel (the log feel).
+            detail: FloatParam::new(
+                "Detail",
+                1000.0,
+                FloatRange::Skewed {
+                    min: 20.0,
+                    max: 2000.0,
+                    factor: 0.232,
+                },
+            )
+            .with_smoother(SmoothingStyle::Exponential(20.0))
+            .with_unit(" Hz")
+            .with_value_to_string(Arc::new(format_hz))
+            .with_step_size(0.01),
+            amount: FloatParam::new("Amount", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Exponential(5.0))
+                .with_unit(" %")
+                .with_step_size(0.01),
+            shape: EnumParam::new("Shape", Shape::Sine),
+            scope_tap: Arc::new(ScopeTap::new(SCOPE_TAP_CAPACITY)),
+        }
     }
 }
 
@@ -113,155 +128,209 @@ impl BogdanParams {
 pub struct BogdanState {
     channels: [DetailClipper; 2],
     scope_transfer: Vec<f32>,
+    sample_rate: f64,
 }
 
 impl BogdanState {
     fn reset(&mut self, sample_rate: f64, max_block_size: usize) {
+        self.sample_rate = sample_rate;
         for channel in &mut self.channels {
             channel.reset(sample_rate);
         }
         self.scope_transfer.resize(max_block_size * 2, 0.0);
     }
+
+    fn reset_channels(&mut self) {
+        for channel in &mut self.channels {
+            channel.reset(self.sample_rate);
+        }
+    }
 }
 
-/// Plugin descriptor for Bogdan's detail-preserving clipping path.
-pub struct Bogdan;
+/// dB to linear gain, sanitized.
+fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(musictools_core::finite_or(db, 0.0) / 20.0)
+}
 
-impl PluginLogic for Bogdan {
-    type Params = BogdanParams;
-    type DspState = BogdanState;
+/// Bogdan, the detail-preserving clipper and wavefolder.
+pub struct Bogdan {
+    params: Arc<BogdanParams>,
+    state: BogdanState,
+}
 
-    const PRESERVE_DSP_STATE: bool = false;
+impl Default for Bogdan {
+    fn default() -> Self {
+        Self {
+            params: Arc::new(BogdanParams::default()),
+            state: BogdanState::default(),
+        }
+    }
+}
 
-    fn reset(state: &mut Self::DspState, params: &Self::Params, config: &AudioConfig) {
-        state.reset(config.sample_rate, config.max_block_size);
-        params.scope_tap.clear();
+impl Bogdan {
+    /// Size buffers, reset filters, and snap smoothers to their current
+    /// values (the wrapper does the smoother snap on activation; tests call
+    /// this directly instead).
+    fn configure(&mut self, sample_rate: f64, max_block_size: usize) {
+        self.state.reset(sample_rate, max_block_size);
+        self.params.scope_tap.clear();
+        let params = &self.params;
+        params.drive.smoothed.reset(params.drive.value());
+        params.ceiling.smoothed.reset(params.ceiling.value());
+        params.detail.smoothed.reset(params.detail.value());
+        params.amount.smoothed.reset(params.amount.value());
+    }
+}
+
+impl Plugin for Bogdan {
+    const NAME: &'static str = "ppc_bogdan";
+    const VENDOR: &'static str = musictools_core::VENDOR_NAME;
+    const URL: &'static str = "https://github.com/oiwn/musictools-rs";
+    const EMAIL: &'static str = "oiwn@localhost";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(2),
+            main_output_channels: NonZeroU32::new(2),
+            ..AudioIOLayout::const_default()
+        },
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(1),
+            main_output_channels: NonZeroU32::new(1),
+            ..AudioIOLayout::const_default()
+        },
+    ];
+
+    type Editor = nice_plug_egui::EguiEditor<editor::BogdanEditor>;
+    type SysExMessage = ();
+    type BackgroundTask = ();
+
+    fn params(&self) -> Arc<dyn Params> {
+        self.params.clone()
+    }
+
+    fn activate(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl ActivateContext<Self>,
+    ) -> bool {
+        self.configure(
+            f64::from(buffer_config.sample_rate),
+            buffer_config.max_buffer_size as usize,
+        );
+        true
+    }
+
+    fn reset(&mut self) {
+        self.state.reset_channels();
+        self.params.scope_tap.clear();
     }
 
     fn process(
-        state: &mut Self::DspState,
-        params: &Self::Params,
-        buffer: &mut AudioBuffer,
-        _events: &EventList,
-        _context: &mut ProcessContext,
+        &mut self,
+        buffer: &mut Buffer<'_>,
+        _aux: &mut AuxiliaryBuffers<'_>,
+        _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        let num_samples = buffer.num_samples();
-        debug_assert!(state.scope_transfer.len() >= num_samples * 2);
+        let num_samples = buffer.samples();
+        debug_assert!(self.state.scope_transfer.len() >= num_samples * 2);
 
-        for sample_index in 0..buffer.num_samples() {
+        for (sample_index, mut samples) in buffer.iter_samples().enumerate() {
             // Advance every smoothed parameter exactly once per frame.
             let settings = DetailSettings {
-                drive: db_to_linear(params.drive.read()),
-                ceiling: db_to_linear(params.ceiling.read()),
-                mode: params.mode.value().to_dsp(),
-                detail_hz: params.detail.read(),
-                amount: params.amount.read(),
-                shape: params.shape.value().to_dsp(),
+                drive: db_to_linear(self.params.drive.smoothed.next()),
+                ceiling: db_to_linear(self.params.ceiling.smoothed.next()),
+                mode: self.params.mode.value().to_dsp(),
+                detail_hz: musictools_core::finite_or(self.params.detail.smoothed.next(), 20.0),
+                amount: musictools_core::finite_or(self.params.amount.smoothed.next(), 0.0),
+                shape: self.params.shape.value().to_dsp(),
             };
 
-            for channel in 0..buffer.channels() {
-                let (input, output) = buffer.io(channel);
-                let frame = state.channels[channel].process(input[sample_index], settings);
-                output[sample_index] = frame.output;
-
+            debug_assert!(samples.len() <= 2);
+            for (channel, sample) in samples.iter_mut().enumerate() {
+                let frame = self.state.channels[channel].process(*sample, settings);
                 if channel == 0 {
                     let scope_index = sample_index * 2;
-                    state.scope_transfer[scope_index] = frame.driven;
-                    state.scope_transfer[scope_index + 1] = frame.output;
+                    self.state.scope_transfer[scope_index] = frame.driven;
+                    self.state.scope_transfer[scope_index + 1] = frame.output;
                 }
+                *sample = frame.output;
             }
         }
 
         if buffer.channels() > 0 {
-            params
+            self.params
                 .scope_tap
-                .push_frames(&state.scope_transfer[..num_samples * 2]);
+                .push_frames(&self.state.scope_transfer[..num_samples * 2]);
         }
 
         ProcessStatus::Normal
     }
 
-    fn editor(params: Arc<Self::Params>) -> Box<dyn Editor> {
-        editor::create(params)
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        editor::create(self.params.clone())
     }
 }
 
-truce::plugin! {
-    logic: Bogdan,
-    params: BogdanParams,
+impl ClapPlugin for Bogdan {
+    const CLAP_ID: &'static str = "com.oiwn.ppc_bogdan";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Detail-preserving clipper and wavefolder");
+    const CLAP_MANUAL_URL: Option<&'static str> = None;
+    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
-truce::enable_rt_paranoid!();
+impl Vst3Plugin for Bogdan {
+    const VST3_CLASS_ID: [u8; 16] = *b"ppc_bogdan_00001";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Fx, Vst3SubCategory::Distortion];
+}
+
+nice_export_clap!(Bogdan);
+nice_export_vst3!(Bogdan);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SAMPLE_RATE: f64 = 48_000.0;
+    use audio_harness::Harness;
 
     #[test]
     fn process_taps_driven_and_processed_channel_zero_frames() {
-        let params = BogdanParams::default();
-        let mut state = BogdanState::default();
-        Bogdan::reset(&mut state, &params, &AudioConfig::new(SAMPLE_RATE, 4));
+        let mut plugin = Bogdan::default();
+        plugin.configure(48_000.0, 4);
 
-        let left_input = [0.25, 1.25, -1.5, 0.5];
-        let right_input = [-0.25, -1.25, 1.5, -0.5];
-        let inputs: [&[f32]; 2] = [&left_input, &right_input];
-        let mut left_output = [0.0; 4];
-        let mut right_output = [0.0; 4];
-        let mut outputs: [&mut [f32]; 2] = [&mut left_output, &mut right_output];
-        let mut buffer = AudioBuffer::from_slices_checked(&inputs, &mut outputs, 4);
-        let events = EventList::default();
-        let mut output_events = EventList::default();
-        let transport = TransportInfo::default();
-        let mut context = ProcessContext::new(&transport, SAMPLE_RATE, 4, &mut output_events);
+        let left_input = [0.25_f32, 1.25, -1.5, 0.5];
+        let mut harness = Harness::new(2, 4);
+        harness.set_input(0, &left_input);
+        harness.set_input(1, &[-0.25, -1.25, 1.5, -0.5]);
 
-        assert_eq!(
-            Bogdan::process(&mut state, &params, &mut buffer, &events, &mut context,),
-            ProcessStatus::Normal
-        );
+        assert_eq!(harness.process(&mut plugin), ProcessStatus::Normal);
 
-        let mut tapped = Vec::new();
-        params
-            .scope_tap
-            .drain_with(|samples| tapped.extend_from_slice(samples));
+        let tapped = plugin.params.scope_tap.drain();
         assert_eq!(tapped.len(), left_input.len() * 2);
         for (index, pair) in tapped.as_chunks::<2>().0.iter().enumerate() {
-            assert_eq!(pair[0], left_input[index]);
-            assert_eq!(pair[1], left_output[index]);
+            assert_eq!(pair[0], left_input[index], "driven frame {index}");
+            assert_eq!(pair[1], harness.output(0)[index], "processed frame {index}");
         }
     }
 
-    #[cfg(feature = "rt-paranoid")]
+    #[cfg(feature = "rt-audit")]
     #[test]
     fn process_scope_feed_is_allocation_free_even_when_tap_is_full() {
         const BLOCK_SIZE: usize = 256;
         const BLOCKS_TO_OVERFLOW_TAP: usize = 140;
 
-        let params = BogdanParams::default();
-        let mut state = BogdanState::default();
-        Bogdan::reset(
-            &mut state,
-            &params,
-            &AudioConfig::new(SAMPLE_RATE, BLOCK_SIZE),
-        );
+        let mut plugin = Bogdan::default();
+        plugin.configure(48_000.0, BLOCK_SIZE);
 
-        let input = [1.5; BLOCK_SIZE];
-        let inputs: [&[f32]; 1] = [&input];
-        let mut output = [0.0; BLOCK_SIZE];
-        let mut outputs: [&mut [f32]; 1] = [&mut output];
-        let mut buffer = AudioBuffer::from_slices_checked(&inputs, &mut outputs, BLOCK_SIZE);
-        let events = EventList::default();
-        let mut output_events = EventList::default();
-        let transport = TransportInfo::default();
-        let mut context =
-            ProcessContext::new(&transport, SAMPLE_RATE, BLOCK_SIZE, &mut output_events);
+        let mut harness = Harness::new(1, BLOCK_SIZE);
+        harness.set_input(0, &[1.5; BLOCK_SIZE]);
+        harness.process(&mut plugin);
 
-        let (_, allocations) = truce::rt::audit(|| {
-            let _section = truce::rt::RtSection::enter();
+        let (_, allocations) = musictools_core::rt_audit::audit(|| {
             for _ in 0..BLOCKS_TO_OVERFLOW_TAP {
-                let _ = Bogdan::process(&mut state, &params, &mut buffer, &events, &mut context);
+                let _ = harness.process(&mut plugin);
             }
         });
 

@@ -3,26 +3,24 @@ resolver = "3"
 members = [
     "crates/musictools-core",
     "crates/neon-ui",
+    "crates/audio-harness",
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
     "plugins/bogdan",
-    "plugins/kirya",
-    "plugins/igorek",
 ]
 default-members = [
     "crates/musictools-core",
     "crates/neon-ui",
+    "crates/audio-harness",
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
     "plugins/bogdan",
-    "plugins/kirya",
-    "plugins/igorek",
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 authors = ["oiwn <blank@gmail.com>"]
 license = "MIT"
@@ -33,16 +31,18 @@ musictools-core = { path = "crates/musictools-core" }
 bogdan-dsp = { path = "crates/bogdan-dsp" }
 kirya-dsp = { path = "crates/kirya-dsp" }
 igorek-dsp = { path = "crates/igorek-dsp" }
+neon-ui = { path = "crates/neon-ui" }
+audio-harness = { path = "crates/audio-harness" }
 realfft = "3"
 hound = "3.5"
 rand = "0.9"
 rfd = { version = "0.15", default-features = false }
-truce = { version = "=6.3.0" }
-truce-egui = { version = "=6.3.0" }
-truce-clap = { version = "=6.3.0" }
-truce-vst3 = { version = "=6.3.0" }
-egui = "0.34"
-clap-sys = "0.5"
+nice-plug = "0.4"
+nice-plug-egui = "0.6"
+# default_fonts is not a default feature in egui 0.37; eframe re-enables it
+# for the showcase, but the plugin path (nice-plug-egui / egui-baseview)
+# ships without fonts unless we enable it here.
+egui = { version = "0.37", features = ["default_fonts"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

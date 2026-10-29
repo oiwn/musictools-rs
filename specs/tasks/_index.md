@@ -3,11 +3,10 @@
 
 ## Active
 
-- **0004-neon-ui-controls** — approval — neon ui controls (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
+- **0016-nice-migration-foundation** — approval — nice migration foundation (user request 2026-10-29: migrate to nice-plug (egui 0.37) per roadmap decision; three-task plan approved in session)
 
 ## Draft
 
-- **0005-neon-ui-displays** — draft — neon ui displays (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
 - **0006-bogdan-neon-editor** — draft — bogdan neon editor (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
 - **0007-kirya-neon-editor** — draft — kirya neon editor (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
 - **0008-roman-dsp-biquad** — draft — roman dsp biquad (user request 2026-10-29: Roman biquad filter plugin (reference code in task Context))
@@ -17,10 +16,16 @@
 - **0012-grid-mix4** — draft — grid mix4 (user request 2026-10-29: grid module (parked until grid foundation))
 - **0013-ci-plugin-packages** — draft — ci plugin packages (user request 2026-10-29: CI building cross-platform plugin packages)
 - **0014-grid-foundation** — draft — grid foundation (user request 2026-10-29: grid system must exist before grid plugins; queued after the design system and the three plugins (kirya, bogdan, roman))
+- **0017-kirya-nice-port** — draft — kirya nice port (user request 2026-10-29: kirya port to nice-plug after migration foundation)
+- **0018-igorek-nice-port-docs** — draft — igorek nice port docs (user request 2026-10-29: igorek port plus tooling/docs sweep)
+- **0020-neon-ui-polish** — draft — neon ui polish (user request 2026-10-30: in-host Bogdan shot looks unpolished vs design sketch; plan UI component polish with a screenshot CLI)
 
 ## Done
 
 - **0001-igorek-two-stage-convolver** — done — igorek two stage convolver (specs/ctx.md Igorek design task; landed in commit 0b73ddd)
 - **0002-clippy-toolchain-lint-cleanup** — done — clippy toolchain lint cleanup (clippy 0.1.99 failures on rustc 1.99 blocking task 0001's acceptance gate)
 - **0003-neon-ui-theme** — done — neon ui theme (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
+- **0004-neon-ui-controls** — done — neon ui controls (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
+- **0005-neon-ui-displays** — done — neon ui displays (user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md))
 - **0015-ui-showcase** — done — ui showcase (user request 2026-10-29: host-free app showcasing the neon-ui kit before the nice-plug migration)
+- **0019-neon-ui-snapshot-cli** — done — neon ui snapshot cli (user request 2026-10-30: in-host Bogdan shot looks unpolished vs design sketch; plan UI component polish with a screenshot CLI)

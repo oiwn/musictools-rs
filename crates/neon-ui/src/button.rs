@@ -29,9 +29,10 @@ pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
     );
     let led = 6.0;
     let size = Vec2::new(10.0 + led + 8.0 + galley.size().x + 10.0, 24.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
     if response.clicked() {
         *on = !*on;
+        response.mark_changed();
     }
 
     paint_body(ui, rect, response.hovered());

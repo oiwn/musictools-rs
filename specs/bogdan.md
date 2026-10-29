@@ -47,12 +47,12 @@ The blend is `(1 - amount) * clip(x) + amount * fold(x)`, and its antiderivative
 
 Ids are a permanent contract: a host stores automation against them, so an id must never be reused or renumbered.
 
-- **0 Drive** — `linear(0, 24)` dB, default `0`, smoothing `exp(5)`.
-- **1 Ceiling** — `linear(-24, 0)` dB, default `-0.1`, smoothing `exp(5)`.
+- **0 Drive** — `linear(0, 24)` dB, default `0`, step `0.01`, smoothing `exp(5)`.
+- **1 Ceiling** — `linear(-24, 0)` dB, default `-0.1`, step `0.01`, smoothing `exp(5)`.
 - **2 Mode** — enum Clean / Detail / Fold, default Detail, no smoothing.
-- **3 Detail** — `log(20, 2000)` Hz, default `1000`, smoothing `exp(20)`.
-- **4 Amount** — `linear(0, 1)` %, default `1`, smoothing `exp(5)`.
-- **5 Shape** — enum Sine / Triangle, default Sine, no smoothing.
+- **3 Detail** — `log(20, 2000)` Hz, default `1000`, step `0.01`, smoothing `exp(20)`.
+- **4 Amount** — `linear(0, 1)` %, default `1`, step `0.01`, smoothing `exp(5)`.
+- **5 Shape** — enum Sine / Triangle, default Sine, no smoothing. Read only by the Fold voice; the editor grays it out in Clean/Detail.
 
 The Detail cutoff is displayed through `musictools_core::format_hz`, shared with Kirya, so both plugins print frequencies the same way.
 

@@ -7,5 +7,13 @@ license.workspace = true
 repository.workspace = true
 description = "Shared support code for the MusicTools plugin suite"
 
+[features]
+# Realtime allocation auditing: enables the counting global allocator in the
+# final binary (tests run with --all-features, so the audit is active there).
+alloc-audit = ["dep:assert_no_alloc"]
+
+[dependencies]
+assert_no_alloc = { version = "1", optional = true, features = ["warn_debug"] }
+
 [lints]
 workspace = true

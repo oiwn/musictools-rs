@@ -11,6 +11,21 @@ task. Coexists with any conventional release notes already here.
 - files touched / decisions locked
 -->
 
+## 2026-10-30 — neon ui snapshot cli
+
+- Headless PNG snapshots of neon-ui scenes via `cargo run -p neon-ui --example snapshot`.
+- Task `0019-neon-ui-snapshot-cli`; source: user request 2026-10-30: in-host Bogdan shot looks unpolished vs design sketch; plan UI component polish with a screenshot CLI
+
+## 2026-10-29 — neon ui displays
+
+- Display and chrome widgets for the neon-ui kit — select, tabs, meters, graph grids, header bar — framework-free, demoed in the showcase.
+- Task `0005-neon-ui-displays`; source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
+
+## 2026-10-29 — neon ui controls
+
+- Interactive framework-free controls for the neon-ui kit — knobs, sliders, buttons/toggles, value entry — demoed in the showcase with a Bogdan preview.
+- Task `0004-neon-ui-controls`; source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
+
 ## 2026-10-29 — ui showcase
 
 - Host-free eframe showcase app rendering the neon-ui palette, surfaces, and glow as the suite's living style guide.

@@ -1,6 +1,6 @@
 ---
 id: 0004-neon-ui-controls
-status: approval
+status: done
 scope: [crates/neon-ui/]
 created: 2026-10-29
 source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
@@ -28,8 +28,8 @@ depends: [0003-neon-ui-theme]
 
 ## Manual checks
 
-- [ ] Showcase WIDGETS: knobs drag / Shift-fine / double-click / snap-to-ticks, single and range sliders, toggles, and value entry (Enter commits, click-away cancels) all behave.
-- [ ] BOGDAN PREVIEW reads as the 0006 editor shape per [`design-sketch.png`](../design-sketch.png).
+- [x] Showcase WIDGETS: knobs drag / Shift-fine / double-click / snap-to-ticks, single and range sliders, toggles, and value entry (Enter commits, click-away cancels) all behave — user: "Looks nice!"
+- [x] BOGDAN PREVIEW reads as the 0006 editor shape per [`design-sketch.png`](../design-sketch.png) — user: "Looks nice!"
 
 ## Context
 
@@ -66,3 +66,5 @@ Interactive framework-free controls for the neon-ui kit — knobs, sliders, butt
 - 2026-10-29 advance in-progress/implement → in-progress/verify
 - 2026-10-29 advance in-progress/verify → in-progress/review
 - 2026-10-29 advance in-progress/review → approval
+- 2026-10-29 approved: Looks nice! let's close the task first.
+- 2026-10-29 advance approval → done

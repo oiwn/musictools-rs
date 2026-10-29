@@ -7,6 +7,8 @@ Workspace architecture and the rules that apply across every plugin. Each plugin
 - [`igorek.md`](igorek.md) — two-stage convolver for percussion.
 - [`design.md`](design.md) — Dark Neon UI style guide behind the shared neon-ui kit.
 
+Plugin naming (decided 2026-10-29): the nice-plug generation ships as separate, coexisting plugins — `ppc_bogdan`, `ppc_kirya`, `ppc_igorek`, and `ppc_roman` when it lands — in display name, package name, bundle file name, and identity (`com.oiwn.ppc_*` CLAP ids, fresh VST3 class ids). The legacy truce-built plugins keep their names and ids untouched so existing projects and installs are unaffected.
+
 ## Architecture
 
 The repository is a Truce-based Cargo workspace designed to host a suite of audio plugins. Shared dependency versions live in the virtual workspace root.

@@ -1,0 +1,16 @@
+[package]
+name = "audio-harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Checked test harness for nice-plug audio processing"
+
+# This crate deliberately does not inherit the workspace lint set: building a
+# nice-plug Buffer from slices requires one unsafe Buffer::set_slices call,
+# encapsulated here behind checked invariants so every other workspace crate
+# keeps unsafe_code = "forbid".
+
+[dependencies]
+nice-plug = { workspace = true }

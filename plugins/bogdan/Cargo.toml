@@ -1,5 +1,5 @@
 [package]
-name = "bogdan"
+name = "ppc_bogdan"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -11,20 +11,19 @@ description = "Bogdan detail-preserving clipper"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
-default = ["clap", "vst3"]
-clap = ["dep:truce-clap", "dep:clap-sys"]
-vst3 = ["dep:truce-vst3"]
-rt-paranoid = ["truce/rt-paranoid"]
+default = []
+rt-audit = ["musictools-core/alloc-audit"]
 
 [dependencies]
 musictools-core = { workspace = true }
 bogdan-dsp = { workspace = true }
-truce = { workspace = true }
-truce-egui = { workspace = true }
-truce-clap = { workspace = true, optional = true }
-truce-vst3 = { workspace = true, optional = true }
+neon-ui = { workspace = true, features = ["nice-plug"] }
+nice-plug = { workspace = true }
+nice-plug-egui = { workspace = true }
 egui = { workspace = true }
-clap-sys = { workspace = true, optional = true }
+
+[dev-dependencies]
+audio-harness = { workspace = true }
 
 [lints]
 workspace = true

@@ -26,6 +26,13 @@ impl KnobSize {
             Self::Large => 64.0,
         }
     }
+
+    /// Widget footprint: the diameter plus the readout and label rows, with
+    /// horizontal padding for the arc glow.
+    #[must_use]
+    pub fn footprint(self) -> Vec2 {
+        Vec2::new(self.diameter() + 8.0, self.diameter() + 38.0)
+    }
 }
 
 /// Arc sweep: 270 degrees from bottom-left to bottom-right.
@@ -137,14 +144,14 @@ pub fn knob_with(
     fmt: &dyn Fn(f64) -> String,
     params: &KnobParams<'_>,
 ) -> Response {
-    let diameter = params.size.diameter();
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(diameter + 8.0, diameter + 38.0),
-        Sense::click_and_drag(),
-    );
+    let (rect, mut response) =
+        ui.allocate_exact_size(params.size.footprint(), Sense::click_and_drag());
 
-    if response.double_clicked() {
+    // Double-click or ctrl/⌘-click restores the default. The modifier path
+    // is the reliable one under hosts whose window events mangle click pairs.
+    if response.double_clicked() || (response.clicked() && ui.input(|input| input.modifiers.ctrl)) {
         *value = params.default;
+        response.mark_changed();
     }
     let mut active_snap = None;
     if response.dragged() {
@@ -154,6 +161,7 @@ pub fn knob_with(
         if let Some(index) = active_snap {
             *value = params.snap_points[index];
         }
+        response.mark_changed();
     }
 
     paint(

@@ -34,6 +34,11 @@ Keep plugin-specific signal processing in its DSP crate. Move code into
 - `cargo run -p kirya-dsp --release --example tank_stability` sweeps the reverb
   tank's parameter corners at four sample rates and fails on any runaway.
   Both Kirya examples want `--release`; they render tens of seconds of audio.
+- `cargo run -p neon-ui --example showcase` opens the neon-ui living style
+  guide; `cargo run -p neon-ui --example snapshot -- [scene...]` renders the
+  same sections headless to `target/snapshots/*.png` (`--list` names the
+  scenes, `--scale N` sets pixel density) for review against
+  `specs/design-sketch.png`.
 - `cargo truce build -p bogdan --clap --vst3` creates CLAP and VST3 bundles.
   Install `cargo-truce` version 6.3.0 first.
 

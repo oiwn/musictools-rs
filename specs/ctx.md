@@ -4,19 +4,18 @@ State: in progress
 
 ## Plan
 
-- [x] 0003 neon-ui theme and 0015 showcase: done 2026-10-29, accepted off the showcase window.
-- [x] 0004 controls: implemented, verified, in approval — awaiting interaction + Bogdan-preview manual checks.
-- [ ] 0005 displays: needs the same framework-free amendment at its review (meter-store coupling defers to the bindings task).
-- [ ] Then: nice-plug migration task → small neon-ui bindings task → 0006 + 0007 editor rebuilds on nice-plug; 0008 → 0009 Roman; 0013 any time; 0014 then 0010-0012 grid modules. Decision and order in [`roadmap.md`](roadmap.md).
+- [x] Design system complete 2026-10-29: 0003 theme, 0015 showcase, 0004 controls, 0005 displays.
+- [ ] Migration 0016 (foundation + Bogdan) in approval — awaiting the DAW manual check. Then 0017 Kirya port, 0018 Igorek port + docs sweep.
+- [ ] Kit polish before the editor rebuilds: 0019 snapshot CLI done; next 0020 neon-ui polish against the sketch (draft, awaiting approval).
+- [ ] Then: 0006 + 0007 editor rebuilds on nice-plug + the neon kit; 0008 → 0009 Roman; 0013 any time; 0014 then 0010-0012 grid modules. Order in [`roadmap.md`](roadmap.md).
 
 ## Context
 
-- Task in approval: [`0004`](tasks/0004-neon-ui-controls.md) — framework-free knobs, sliders, buttons/toggles, value entry, plus the showcase WIDGETS and BOGDAN PREVIEW sections.
-- Style guide: [`design.md`](design.md), transcribed from the sketch (`design-sketch.png`); the living version is `cargo run -p neon-ui --example showcase`.
-- Framework decision 2026-10-29, ordered design-first: 0004/0005 framework-free → migrate to nice-plug → neon-ui bindings → editor rebuilds.
+- Task in approval: [`0016`](tasks/0016-nice-migration-foundation.md) — workspace on nice-plug 0.4 / egui 0.37, alloc-audit, neon-ui bindings, audio-harness, Bogdan ported and bundled.
+- Kirya and Igorek crates are temporarily out of the workspace members until 0017/0018 port them; their sources still reference truce.
+- Style guide: [`design.md`](design.md); the living showcase runs on eframe 0.37 (`cargo run -p neon-ui --example showcase`).
 - Igorek closed 2026-10-29 (0001, 0002 archived to CHANGELOG); the release set is Bogdan and Kirya, Roman joins with 0009.
-- Drafts: 0005 displays, 0006-0007 editor rebuilds, 0008-0009 Roman, 0010-0012 parked grid modules, 0013 CI packaging, 0014 grid foundation (unlocks 0010-0012).
 
 ## Next
 
-Run the showcase and check 0004's two manual items (widget interactions, Bogdan preview), then accept 0004. Next draft up: 0005 with its framework-free amendment.
+Load `target/bundled/ppc_bogdan.clap` (or the VST3) in a host — it appears as **ppc_bogdan**, a separate plugin from the legacy truce Bogdan, which stays installed and untouched. Confirm params/audio/editor, then accept 0016; 0017 (Kirya port, as `ppc_kirya`) follows immediately.

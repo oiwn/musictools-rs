@@ -5,7 +5,7 @@ scope: [plugins/kirya/src/editor.rs, specs/kirya.md]
 created: 2026-10-29
 source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
 grade: huge
-depends: [0004-neon-ui-controls, 0005-neon-ui-displays]
+depends: [0004-neon-ui-controls, 0005-neon-ui-displays, 0020-neon-ui-polish]
 ---
 # Task: kirya neon editor
 
@@ -49,3 +49,4 @@ Kirya's editor rebuilt on the neon-ui kit with REVERB/SPECTRUM tabs.
 - 2026-10-29 set depends 0005-neon-ui-displays
 - 2026-10-29 set grade huge
 - 2026-10-29 set depends 0004-neon-ui-controls, 0005-neon-ui-displays
+- 2026-10-30 set depends 0004-neon-ui-controls, 0005-neon-ui-displays, 0020-neon-ui-polish

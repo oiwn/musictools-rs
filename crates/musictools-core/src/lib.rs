@@ -1,5 +1,12 @@
 //! Shared, framework-independent support for the MusicTools plugin suite.
 
+/// Realtime allocation auditing, behind the `alloc-audit` feature.
+#[cfg(feature = "alloc-audit")]
+pub mod rt_audit;
+
+/// Scope tap: the audio-to-editor oscilloscope handoff.
+pub mod scope_tap;
+
 /// Human-readable suite name.
 pub const SUITE_NAME: &str = "MusicTools";
 

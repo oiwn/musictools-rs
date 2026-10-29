@@ -28,16 +28,21 @@ pub fn nearest_low(x: f32, low_x: f32, high_x: f32) -> bool {
 /// Single-value slider. `value` is normalized 0..=1; double-click restores
 /// `default`.
 pub fn slider(ui: &mut Ui, value: &mut f64, default: f64, width: f32) -> Response {
-    let (rect, response) =
+    let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(width, ROW_HEIGHT), Sense::click_and_drag());
     if response.double_clicked() {
         *value = default;
+        response.mark_changed();
     }
     if (response.dragged() || response.clicked())
         && let Some(pos) = response.interact_pointer_pos()
     {
         let (left, right) = track_span(rect);
-        *value = pos_to_value(pos.x, left, right);
+        let next = pos_to_value(pos.x, left, right);
+        if next != *value {
+            *value = next;
+            response.mark_changed();
+        }
     }
     paint_single(ui.painter(), rect, *value, response.hovered());
     response
@@ -45,7 +50,7 @@ pub fn slider(ui: &mut Ui, value: &mut f64, default: f64, width: f32) -> Respons
 
 /// Double-thumb range slider; thumbs cannot cross.
 pub fn range_slider(ui: &mut Ui, low: &mut f64, high: &mut f64, width: f32) -> Response {
-    let (rect, response) =
+    let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(width, ROW_HEIGHT), Sense::click_and_drag());
     let (left, right) = track_span(rect);
 
@@ -66,10 +71,12 @@ pub fn range_slider(ui: &mut Ui, low: &mut f64, high: &mut f64, width: f32) -> R
             .data(|data| data.get_temp::<bool>(response.id))
             .unwrap_or(true);
         let value = pos_to_value(pos.x, left, right);
-        if moving_low {
-            *low = value.min(*high);
-        } else {
-            *high = value.max(*low);
+        let next_low = if moving_low { value.min(*high) } else { *low };
+        let next_high = if moving_low { *high } else { value.max(*low) };
+        if next_low != *low || next_high != *high {
+            *low = next_low;
+            *high = next_high;
+            response.mark_changed();
         }
     }
 

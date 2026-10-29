@@ -65,3 +65,8 @@ Panels: 2–3 px radius, hairline strokes, no drop shadows; depth comes from the
 - `dark_neon_visuals()` replaces `truce_egui::theme::dark()` via `EguiEditor::with_ui(...).with_visuals(...)`.
 - Editors keep timed repaints (16–33 ms) while meters or graphs animate; fully static views repaint on interaction only.
 - Adoption: Bogdan and Kirya rebuild on the kit (tasks 0006/0007); Roman uses it from day one (0009); later grid modules inherit it for free.
+
+## Tooling
+
+- `cargo run -p neon-ui --example showcase` — the living style guide in a window.
+- `cargo run -p neon-ui --example snapshot -- [scene...] [--out DIR] [--scale N] [--list]` — renders the same sections headless (egui_kittest + wgpu) to `target/snapshots/<scene>.png`; `knobs`, `buttons`, and `tabs` also write `<scene>-states.png` (default, hover, pressed, active, disabled). A review aid for comparing against the sketch, not a pixel-diff baseline. Missing glyphs render as tofu boxes there, as they would in a host.

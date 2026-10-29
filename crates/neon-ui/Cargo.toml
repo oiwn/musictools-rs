@@ -9,9 +9,15 @@ description = "Dark Neon UI kit for the MusicTools plugin suite"
 
 [dependencies]
 egui = { workspace = true }
+nice-plug = { workspace = true, optional = true }
+
+[features]
+nice-plug = ["dep:nice-plug"]
 
 [dev-dependencies]
-eframe = "0.34"
+eframe = "0.37"
+egui_kittest = { version = "0.37", features = ["wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true
