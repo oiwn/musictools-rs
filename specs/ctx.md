@@ -1,15 +1,22 @@
-# Current Task Context: igorek two stage convolver
+# Current Task Context: neon design system and suite tasks
 
-State: awaiting acceptance
+State: in progress
+
+## Plan
+
+- [x] 0003 neon-ui theme and 0015 showcase: done 2026-10-29, accepted off the showcase window.
+- [x] 0004 controls: implemented, verified, in approval — awaiting interaction + Bogdan-preview manual checks.
+- [ ] 0005 displays: needs the same framework-free amendment at its review (meter-store coupling defers to the bindings task).
+- [ ] Then: nice-plug migration task → small neon-ui bindings task → 0006 + 0007 editor rebuilds on nice-plug; 0008 → 0009 Roman; 0013 any time; 0014 then 0010-0012 grid modules. Decision and order in [`roadmap.md`](roadmap.md).
 
 ## Context
 
-Active task: [`0001-igorek-two-stage-convolver`](tasks/0001-igorek-two-stage-convolver.md). The two-stage convolver landed as one commit (`0b73ddd`); the task file carries the plan, acceptance, review, and summary. Design, signal chain, parameter contract, and gotchas: [`igorek.md`](igorek.md).
-
-Also at approval: [`0002-clippy-toolchain-lint-cleanup`](tasks/0002-clippy-toolchain-lint-cleanup.md) — the 18 sites the rustc 1.99 lints flagged outside task 0001's scope.
-
-The only work left on 0001 is human: load Igorek in a host, check the editor (pane drags, room regeneration, the Load WAV dialog), and listen. The Load WAV dialog is still reported as failing in one host — that open finding is in the task file.
+- Task in approval: [`0004`](tasks/0004-neon-ui-controls.md) — framework-free knobs, sliders, buttons/toggles, value entry, plus the showcase WIDGETS and BOGDAN PREVIEW sections.
+- Style guide: [`design.md`](design.md), transcribed from the sketch (`design-sketch.png`); the living version is `cargo run -p neon-ui --example showcase`.
+- Framework decision 2026-10-29, ordered design-first: 0004/0005 framework-free → migrate to nice-plug → neon-ui bindings → editor rebuilds.
+- Igorek closed 2026-10-29 (0001, 0002 archived to CHANGELOG); the release set is Bogdan and Kirya, Roman joins with 0009.
+- Drafts: 0005 displays, 0006-0007 editor rebuilds, 0008-0009 Roman, 0010-0012 parked grid modules, 0013 CI packaging, 0014 grid foundation (unlocks 0010-0012).
 
 ## Next
 
-Review both tasks. After the host test, tick 0001's Manual check and accept: `specdev task done 0001 0002` archives them into `CHANGELOG.md`.
+Run the showcase and check 0004's two manual items (widget interactions, Bogdan preview), then accept 0004. Next draft up: 0005 with its framework-free amendment.

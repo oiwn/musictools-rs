@@ -5,6 +5,7 @@ Workspace architecture and the rules that apply across every plugin. Each plugin
 - [`bogdan.md`](bogdan.md) — detail-preserving clipper and wavefolder.
 - [`kirya.md`](kirya.md) — Dattorro plate reverb with a live IR probe.
 - [`igorek.md`](igorek.md) — two-stage convolver for percussion.
+- [`design.md`](design.md) — Dark Neon UI style guide behind the shared neon-ui kit.
 
 ## Architecture
 

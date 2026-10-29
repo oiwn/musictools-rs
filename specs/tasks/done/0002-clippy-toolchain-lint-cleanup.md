@@ -1,6 +1,6 @@
 ---
 id: 0002-clippy-toolchain-lint-cleanup
-status: approval
+status: done
 scope: [plugins/bogdan/src/editor.rs, plugins/bogdan/src/lib.rs, plugins/kirya/src/editor.rs, plugins/igorek/src/editor.rs]
 created: 2026-10-29
 source: clippy 0.1.99 failures on rustc 1.99 blocking task 0001's acceptance gate
@@ -55,3 +55,5 @@ Modernized 18 sites for the rustc 1.99 Clippy lints (`_f32` literals and `as_chu
 - 2026-10-29 advance in-progress/implement → in-progress/verify
 - 2026-10-29 advance in-progress/verify → in-progress/review
 - 2026-10-29 advance in-progress/review → approval
+- 2026-10-29 approved: Close both, drop from releases — convolver failed miserably; Bogdan and Kirya are the plugins I use.
+- 2026-10-29 advance approval → done

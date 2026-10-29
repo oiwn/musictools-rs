@@ -1,6 +1,6 @@
 ---
 id: 0001-igorek-two-stage-convolver
-status: approval
+status: done
 scope: [crates/igorek-dsp/, plugins/igorek/]
 created: 2026-10-29
 source: specs/ctx.md Igorek design task; landed in commit 0b73ddd
@@ -30,7 +30,7 @@ grade: huge
 
 ## Manual checks
 
-- [ ] Load Igorek in a host: pane drags, room regeneration, and the Load WAV dialog behave; listen to both stages.
+- [x] Load Igorek in a host: pane drags, room regeneration, and the Load WAV dialog behave; listen to both stages. — waived by user: "Close both, drop from releases — we tried the convolver and it failed miserably; I use Bogdan and Kirya, moving on."
 
 ## Summary
 
@@ -72,3 +72,5 @@ Two-stage convolver: Color and Room stages with baked selection/envelope, a part
 - 2026-10-29 baseline: AGENTS.md@84894d0ea22c, plugins/bogdan/src/editor.rs@6c8d69483497, plugins/bogdan/src/lib.rs@5a963e4b0f46, plugins/kirya/src/editor.rs@6bda23791c42, specdev.toml@7c63880b5cec
 - 2026-10-29 advance in-progress/verify → in-progress/review
 - 2026-10-29 advance in-progress/review → approval
+- 2026-10-29 approved: Close both, drop from releases — convolver failed miserably; Bogdan and Kirya are the plugins I use.
+- 2026-10-29 advance approval → done

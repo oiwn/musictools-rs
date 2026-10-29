@@ -1,5 +1,8 @@
-session_name: musictools-rs
-shell_command_before: "export RUST_LOG=info; sleep 2;"
+session_name: ppc-rs
+environment:
+  RUST_LOG: info
+  PPC_ENV: dev
+shell_command_before: "clear"
 windows:
   - window_name: code
     focus: true
@@ -7,7 +10,6 @@ windows:
     panes:
       - shell_command:
         - hx
-
   - window_name: agent
     start-directory: ./
     panes:

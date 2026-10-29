@@ -1,0 +1,17 @@
+[package]
+name = "neon-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Dark Neon UI kit for the MusicTools plugin suite"
+
+[dependencies]
+egui = { workspace = true }
+
+[dev-dependencies]
+eframe = "0.34"
+
+[lints]
+workspace = true

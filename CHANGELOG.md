@@ -11,6 +11,26 @@ task. Coexists with any conventional release notes already here.
 - files touched / decisions locked
 -->
 
+## 2026-10-29 — ui showcase
+
+- Host-free eframe showcase app rendering the neon-ui palette, surfaces, and glow as the suite's living style guide.
+- Task `0015-ui-showcase`; source: user request 2026-10-29: host-free app showcasing the neon-ui kit before the nice-plug migration
+
+## 2026-10-29 — neon ui theme
+
+- neon-ui crate with the Dark Neon palette, egui visuals, surface painters, and glow helper.
+- Task `0003-neon-ui-theme`; source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
+
+## 2026-10-29 — clippy toolchain lint cleanup
+
+- Modernized 18 sites for the rustc 1.99 Clippy lints (`_f32` literals and `as_chunks`), restoring a clean `-D warnings` build.
+- Task `0002-clippy-toolchain-lint-cleanup`; source: clippy 0.1.99 failures on rustc 1.99 blocking task 0001's acceptance gate
+
+## 2026-10-29 — igorek two stage convolver
+
+- Two-stage convolver: Color and Room stages with baked selection/envelope, a partitioned FFT engine, and a Truce wrapper with an egui editor.
+- Task `0001-igorek-two-stage-convolver`; source: specs/ctx.md Igorek design task; landed in commit 0b73ddd
+
 ## 2026-08-07 — Kirya follow-ups: IR window, Hz formatting, per-plugin specs
 
 - **Adaptive IR probe window.** The probe rendered a fixed 3 s, so at the long

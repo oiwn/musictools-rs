@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/musictools-core",
+    "crates/neon-ui",
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
@@ -11,6 +12,7 @@ members = [
 ]
 default-members = [
     "crates/musictools-core",
+    "crates/neon-ui",
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
