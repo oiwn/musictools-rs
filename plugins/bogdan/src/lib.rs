@@ -110,12 +110,17 @@ impl Default for BogdanParams {
                 },
             )
             .with_smoother(SmoothingStyle::Exponential(20.0))
-            .with_unit(" Hz")
+            // `format_hz` prints its own unit ("1.00 kHz"), so the param
+            // carries none; otherwise readouts say "kHz Hz".
             .with_value_to_string(Arc::new(format_hz))
+            .with_string_to_value(Arc::new(musictools_core::parse_hz))
             .with_step_size(0.01),
+            // Stored 0..1, shown and typed as a percentage.
             amount: FloatParam::new("Amount", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Exponential(5.0))
                 .with_unit(" %")
+                .with_value_to_string(Arc::new(musictools_core::format_percent))
+                .with_string_to_value(Arc::new(musictools_core::parse_percent))
                 .with_step_size(0.01),
             shape: EnumParam::new("Shape", Shape::Sine),
             scope_tap: Arc::new(ScopeTap::new(SCOPE_TAP_CAPACITY)),
@@ -281,6 +286,7 @@ impl ClapPlugin for Bogdan {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
+#[cfg(feature = "vst3")]
 impl Vst3Plugin for Bogdan {
     const VST3_CLASS_ID: [u8; 16] = *b"ppc_bogdan_00001";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
@@ -288,12 +294,40 @@ impl Vst3Plugin for Bogdan {
 }
 
 nice_export_clap!(Bogdan);
+#[cfg(feature = "vst3")]
 nice_export_vst3!(Bogdan);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use audio_harness::Harness;
+
+    #[test]
+    fn readouts_show_each_unit_once() {
+        let params = BogdanParams::default();
+        let detail = params
+            .detail
+            .normalized_value_to_string(params.detail.default_normalized_value(), true);
+        assert_eq!(detail, "1.00 kHz");
+        let amount = params
+            .amount
+            .normalized_value_to_string(params.amount.default_normalized_value(), true);
+        assert_eq!(amount, "100 %");
+    }
+
+    #[test]
+    fn typed_values_parse_back() {
+        let params = BogdanParams::default();
+        for (text, hz) in [("1000", 1000.0), ("1000 Hz", 1000.0), ("1.5 kHz", 1500.0)] {
+            let normalized = params.detail.string_to_normalized_value(text).unwrap();
+            assert!(
+                (params.detail.preview_plain(normalized) - hz).abs() < 0.5,
+                "{text}"
+            );
+        }
+        let normalized = params.amount.string_to_normalized_value("50 %").unwrap();
+        assert!((params.amount.preview_plain(normalized) - 0.5).abs() < 1e-6);
+    }
 
     #[test]
     fn process_taps_driven_and_processed_channel_zero_frames() {

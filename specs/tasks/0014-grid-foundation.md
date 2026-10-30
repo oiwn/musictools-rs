@@ -14,7 +14,7 @@ depends: [0004-neon-ui-controls, 0005-neon-ui-displays, 0008-roman-dsp-biquad]
 - [ ] `specs/grid.md`: module contract (Copy settings in / frame out, reset, latency), audio and control ports, graph topology rules, canvas interaction model, persistence format.
 - [ ] `crates/grid-dsp`: module graph runtime — topological execution, allocation-free block processing, graph edits applied through a build-and-swap at block boundaries (igorek's IR swap pattern).
 - [ ] Module adapters for the existing DSP crates: Bogdan clipper, Kirya reverb, Roman biquad — the first module library.
-- [ ] `plugins/grid` Truce wrapper: custom state persistence for the graph, master gain, bypass, `rt-paranoid` zero-allocation test.
+- [ ] `plugins/grid` nice-plug wrapper: graph persisted through a `#[persist]` serde field, master gain, bypass, `rt-audit` zero-allocation test on `audio_harness::Harness`.
 - [ ] Canvas editor on neon-ui: pan and zoom, module placement, compact/full module headers per design.md, port drag-to-patch, selection and delete.
 - [ ] House-rule hygiene: `finite_or` at every module boundary, graph output sanitised, allocation only in reset/build paths.
 - [ ] Tests: graph processing matches directly-chained processing; non-finite input stays finite; state save/load round-trip; block-swap never tears down mid-block.
@@ -38,7 +38,8 @@ depends: [0004-neon-ui-controls, 0005-neon-ui-displays, 0008-roman-dsp-biquad]
 - Order decided 2026-10-29: design system and the three plugins (Kirya, Bogdan, Roman) first; this task unlocks the parked module drafts 0010-0012, which depend on it.
 - Umbrella task by user request; when picked up it may split into ordered smaller tasks (runtime, adapters, canvas, persistence) — decide at draft review.
 - Open decision for review: the plugin's display name — suite convention is Slavic names (Bogdan, Kirya, Roman, Igorek); working name is "grid".
-- Module headers (compact and full) are specified in [`design.md`](../design.md); igorek's install/swap protocol is the reference for audio-safe graph edits.
+- Module headers (compact and full) are specified in [`design.md`](../design.md); igorek's install/swap protocol (`igorek-dsp`, `specs/igorek.md`) is the reference for audio-safe graph edits.
+- Re-pointed at nice-plug by 0018 (2026-10-30). nice-plug background tasks don't coalesce; use Kirya's request-id guard (`plugins/kirya/src/task.rs`) for graph rebuilds.
 
 ## Summary
 

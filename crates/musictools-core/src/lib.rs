@@ -7,6 +7,11 @@ pub mod rt_audit;
 /// Scope tap: the audio-to-editor oscilloscope handoff.
 pub mod scope_tap;
 
+/// Parameter text and taper helpers: Hz/percent parsing, exact log taper.
+pub mod units;
+
+pub use units::{LogTaper, format_percent, parse_hz, parse_percent};
+
 /// Human-readable suite name.
 pub const SUITE_NAME: &str = "MusicTools";
 
@@ -39,10 +44,9 @@ const HZ_PLACEHOLDER: &str = "-- Hz";
 
 /// Format a frequency with the precision its magnitude deserves.
 ///
-/// Truce's built-in `ParamUnit::Hz` formatter prints whole hertz below 1 kHz,
-/// which collapses a modulation-rate knob spanning `0.01..20` Hz into "0 Hz"
-/// and "1 Hz". This keeps two decimals where they carry information and drops
-/// them where they would only add noise:
+/// A whole-hertz formatter collapses a modulation-rate knob spanning
+/// `0.01..20` Hz into "0 Hz" and "1 Hz". This keeps two decimals where they
+/// carry information and drops them where they would only add noise:
 ///
 /// | Range | Example |
 /// |---|---|

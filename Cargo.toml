@@ -8,6 +8,7 @@ members = [
     "crates/kirya-dsp",
     "crates/igorek-dsp",
     "plugins/bogdan",
+    "plugins/kirya",
 ]
 default-members = [
     "crates/musictools-core",
@@ -17,6 +18,7 @@ default-members = [
     "crates/kirya-dsp",
     "crates/igorek-dsp",
     "plugins/bogdan",
+    "plugins/kirya",
 ]
 
 [workspace.package]
@@ -36,7 +38,6 @@ audio-harness = { path = "crates/audio-harness" }
 realfft = "3"
 hound = "3.5"
 rand = "0.9"
-rfd = { version = "0.15", default-features = false }
 nice-plug = "0.4"
 nice-plug-egui = "0.6"
 # default_fonts is not a default feature in egui 0.37; eframe re-enables it

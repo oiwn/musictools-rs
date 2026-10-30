@@ -1,5 +1,4 @@
-//! Realtime allocation auditing — the suite's replacement for truce's
-//! `rt-paranoid`.
+//! Realtime allocation auditing: proves a plugin's `process` allocates nothing.
 //!
 //! The `alloc-audit` cargo feature (wired in by each plugin's `rt-audit`
 //! feature, which workspace test runs enable via `--all-features`) installs

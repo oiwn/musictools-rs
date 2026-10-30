@@ -8,15 +8,20 @@ This Rust 2024 Cargo workspace separates reusable code from plugin wrappers:
 - `crates/bogdan-dsp/` contains Bogdan's DSP, unit tests, and offline examples.
 - `crates/kirya-dsp/` contains Kirya's plate reverb, its offline impulse-response
   analysis (feature `analysis`, on by default), unit tests, and examples.
-- `plugins/bogdan/` and `plugins/kirya/` contain the Truce wrappers and egui
-  editors.
+- `crates/neon-ui/` is the Dark Neon egui widget kit shared by every editor;
+  `crates/audio-harness/` runs plugins over checked buffers in tests.
+- `plugins/<name>/` contain the nice-plug wrappers and egui editors
+  (nice-plug-egui), packaged as `ppc_<name>`: Bogdan and Kirya today.
+- `crates/igorek-dsp/` keeps Igorek's convolver engine; its plugin wrapper
+  was removed with truce (2026-10-30) and a revival writes a fresh one.
 - `specs/` records architecture, per-plugin specs, active work, roadmap items,
   and ideas. `specs/overview.md` holds workspace-wide architecture and house
   rules; `specs/bogdan.md` and `specs/kirya.md` own each plugin's description,
   signal chain, parameter reference, gotchas, and reference links. A new plugin
   gets its own `specs/<name>.md`.
-- `truce.toml` defines plugin metadata; generated bundles belong in
-  `target/bundles/` and must not be committed.
+- Plugin metadata (names, ids, CLAP/VST3 info) lives in each plugin's
+  `ClapPlugin`/`Vst3Plugin` impls; generated bundles land in
+  `target/bundled/` and must not be committed.
 
 Keep plugin-specific signal processing in its DSP crate. Move code into
 `musictools-core` only when multiple plugins can use it.
@@ -39,8 +44,14 @@ Keep plugin-specific signal processing in its DSP crate. Move code into
   same sections headless to `target/snapshots/*.png` (`--list` names the
   scenes, `--scale N` sets pixel density) for review against
   `specs/design-sketch.png`.
-- `cargo truce build -p bogdan --clap --vst3` creates CLAP and VST3 bundles.
-  Install `cargo-truce` version 6.3.0 first.
+- `cargo nice-plug bundle ppc_bogdan --release` (or `ppc_kirya`) creates a
+  signed CLAP bundle in `target/bundled/`. CLAP only for now: add `--features vst3` for a VST3
+  bundle too. Needs the `cargo-nice-plug` bundler installed
+  (`cargo xtask` is an alias for it in `.cargo/config.toml`).
+- `just deploy [plugin]` (default `ppc_bogdan`) runs `cargo nice-plug bundle
+  <plugin> --release` and symlinks `target/bundled/<plugin>.clap` into
+  `~/Library/Audio/Plug-Ins/CLAP`; later bundles update the installed plugin
+  in place. `just link` / `just unlink` manage only the symlink.
 
 The hooks in `prek.toml` also run formatting, Clippy, tests, typo checks, and
 secret scanning.
@@ -52,6 +63,10 @@ Use standard rustfmt output (four-space indentation). Follow Rust conventions:
 `SCREAMING_SNAKE_CASE` for constants. Document public APIs and keep audio-thread
 code allocation-free and robust against non-finite host input. Unsafe Rust is
 forbidden workspace-wide.
+
+Agents edit files with the harness's file tools (Read/Edit/Write), not Python,
+sed, or heredoc scripts. Edits stay exact and reviewable that way, and
+"file changed on disk" surprises go away.
 
 ## Testing Guidelines
 

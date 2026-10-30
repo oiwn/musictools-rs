@@ -1,16 +1,16 @@
-//! Bogdan's editor on nice-plug-egui, keeping the pre-neon look until the
-//! 0006 rebuild.
+//! Dark Neon editor, laid out like Kirya's: a header with help, one scope
+//! graph in an inset well, and a control band of MODE tabs, the four knobs,
+//! and SHAPE tabs.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use neon_ui::bindings::{param_knob, param_tabs_vertical};
-use neon_ui::button;
 use neon_ui::knob::KnobSize;
-use neon_ui::tabs;
-use nice_plug::context::gui::GuiContext;
+use neon_ui::{button, fonts, glow, palette, surface, tabs, text};
+use nice_plug::context::gui::{GuiContext, ParamSetter};
 use nice_plug::prelude::Enum;
 use nice_plug_egui::baseview::WindowSize;
 use nice_plug_egui::{
@@ -22,44 +22,59 @@ use crate::{BogdanParams, Mode, Shape};
 
 const VIEW_SAMPLES: usize = 1_024;
 const HISTORY_SAMPLES: usize = 8_192;
-// Consumes the window's vertical slack: compact header + scope + gaps + the
-// knob column (86px) add up just under the 376px window height.
-const SCOPE_HEIGHT: f32 = 226.0;
 const REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 
-const DRIVEN_COLOR: Color32 = Color32::from_rgb(241, 174, 74);
-const PROCESSED_COLOR: Color32 = Color32::from_rgb(71, 207, 218);
-const GRID_COLOR: Color32 = Color32::from_rgb(66, 67, 78);
+/// Logical window size.
+const EDITOR_SIZE: (f32, f32) = (540.0, 420.0);
 
-// The truce dark theme the editor shipped with, kept until the 0006 rebuild
-// paints over it with the neon kit.
-const THEME_BACKGROUND: Color32 = Color32::from_rgb(31, 31, 36);
-const THEME_HEADER_BG: Color32 = Color32::from_rgb(20, 20, 26);
-const THEME_SURFACE: Color32 = Color32::from_rgb(46, 46, 56);
-const THEME_PRIMARY: Color32 = Color32::from_rgb(77, 153, 242);
-const THEME_TEXT: Color32 = Color32::from_rgb(230, 230, 235);
-const THEME_TEXT_DIM: Color32 = Color32::from_rgb(140, 140, 153);
-const THEME_KNOB_TRACK: Color32 = Color32::from_rgb(64, 64, 77);
-const THEME_METER_CLIP: Color32 = Color32::from_rgb(224, 69, 69);
+// Vertical budget, top to bottom (see `vertical_budget`).
+const MARGIN: f32 = 12.0;
+const HEADER_HEIGHT: f32 = 32.0;
+const HEADER_GAP: f32 = 10.0;
+const GRAPH_HEIGHT: f32 = 206.0;
+const GRAPH_GAP: f32 = 12.0;
+/// Caption row over the side columns.
+const CAPTION_HEIGHT: f32 = 18.0;
+const CAPTION_GAP: f32 = 8.0;
+/// Inner padding of the control band panel.
+const BAND_PAD: f32 = 10.0;
 
-fn legacy_dark_visuals() -> egui::Visuals {
-    let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = THEME_BACKGROUND;
-    visuals.window_fill = THEME_SURFACE;
-    visuals.extreme_bg_color = THEME_HEADER_BG;
-    visuals.faint_bg_color = THEME_SURFACE;
-    visuals.widgets.noninteractive.bg_fill = THEME_SURFACE;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, THEME_TEXT_DIM);
-    visuals.widgets.inactive.bg_fill = THEME_KNOB_TRACK;
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, THEME_TEXT);
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(77, 77, 92);
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, THEME_TEXT);
-    visuals.widgets.active.bg_fill = THEME_PRIMARY;
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
-    visuals.selection.bg_fill = THEME_PRIMARY.linear_multiply(0.4);
-    visuals.selection.stroke = Stroke::new(1.0_f32, THEME_PRIMARY);
-    visuals.override_text_color = Some(THEME_TEXT);
-    visuals
+/// Gap between knobs in the row.
+const GAP: f32 = 14.0;
+/// Space either side of a column divider.
+const COLUMN_GAP: f32 = 16.0;
+
+const DRIVEN_COLOR: Color32 = palette::ORANGE;
+const PROCESSED_COLOR: Color32 = palette::CYAN;
+const CEILING_COLOR: Color32 = palette::CLIP;
+
+/// Below this peak the scope shows a "waiting for audio" hint instead of a
+/// flat line that reads as a broken display.
+const SILENCE: f32 = 1.0e-4;
+
+/// Knob width and full knob column height.
+fn knob_size() -> Vec2 {
+    KnobSize::Medium.footprint()
+}
+
+/// Height of the control band panel: caption row, gap, knob row, padding.
+fn band_height() -> f32 {
+    BAND_PAD + CAPTION_HEIGHT + CAPTION_GAP + knob_size().y + BAND_PAD
+}
+
+/// Total height the layout uses; must land just under the window height.
+fn vertical_budget() -> f32 {
+    MARGIN + HEADER_HEIGHT + HEADER_GAP + GRAPH_HEIGHT + GRAPH_GAP + band_height() + MARGIN
+}
+
+/// Width the control band's contents need.
+fn band_content_width() -> f32 {
+    let knob = knob_size();
+    tabs::tabs_vertical_width(Mode::variants())
+        + 2.0 * (2.0 * COLUMN_GAP)
+        + 4.0 * knob.x
+        + 3.0 * GAP
+        + tabs::tabs_vertical_width(Shape::variants())
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -115,7 +130,7 @@ pub struct BogdanEditor {
     gui: Option<GuiContext>,
     repaint: RepaintNotifier,
     history: ScopeHistory,
-    /// "?" toggles between the interface and a text help screen.
+    /// "?" swaps the graph and controls for a text help screen.
     show_help: bool,
 }
 
@@ -129,65 +144,6 @@ impl BogdanEditor {
             show_help: false,
         }
     }
-
-    fn draw_scope(&self, ui: &mut egui::Ui, ceiling: f32) {
-        let width = (ui.available_width() - 24.0).max(1.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, SCOPE_HEIGHT), Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 6.0, THEME_HEADER_BG);
-        painter.rect_stroke(
-            rect,
-            6.0,
-            Stroke::new(1.0_f32, GRID_COLOR),
-            egui::StrokeKind::Inside,
-        );
-
-        let plot = rect.shrink2(Vec2::new(10.0, 12.0));
-        painter.line_segment(
-            [
-                Pos2::new(plot.left(), plot.center().y),
-                Pos2::new(plot.right(), plot.center().y),
-            ],
-            Stroke::new(1.0_f32, GRID_COLOR),
-        );
-
-        let safe_ceiling = finite_sample(ceiling).abs().max(f32::MIN_POSITIVE);
-        let vertical_extent = safe_ceiling * 2.0;
-        for polarity in [-1.0_f32, 1.0] {
-            let y = sample_y(polarity * safe_ceiling, vertical_extent, plot);
-            painter.line_segment(
-                [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-                Stroke::new(1.0_f32, THEME_METER_CLIP),
-            );
-        }
-
-        let range = self.history.display_range();
-        if !range.is_empty() {
-            let mut driven = Vec::with_capacity(range.len());
-            let mut processed = Vec::with_capacity(range.len());
-            for (display_index, history_index) in range.enumerate() {
-                let x = sample_x(display_index, plot);
-                let frame = self.history.frames[history_index];
-                driven.push(Pos2::new(x, sample_y(frame.driven, vertical_extent, plot)));
-                processed.push(Pos2::new(
-                    x,
-                    sample_y(frame.processed, vertical_extent, plot),
-                ));
-            }
-            if driven.len() > 1 {
-                painter.add(egui::Shape::line(
-                    driven,
-                    Stroke::new(1.2_f32, DRIVEN_COLOR),
-                ));
-                painter.add(egui::Shape::line(
-                    processed,
-                    Stroke::new(1.6_f32, PROCESSED_COLOR),
-                ));
-            }
-        }
-
-        draw_legend(&painter, plot);
-    }
 }
 
 impl NiceEguiApp for BogdanEditor {
@@ -197,7 +153,8 @@ impl NiceEguiApp for BogdanEditor {
         nice_gui_ctx: GuiContext,
         _frame: &mut Frame,
     ) -> Result<(), nice_plug_egui::baseview::HandlerError> {
-        egui_ctx.set_visuals(legacy_dark_visuals());
+        egui_ctx.set_visuals(neon_ui::visuals::dark_neon_visuals());
+        fonts::install(&egui_ctx);
         self.gui = Some(nice_gui_ctx);
         self.history.clear();
         self.params.scope_tap.clear();
@@ -220,179 +177,371 @@ impl NiceEguiApp for BogdanEditor {
         let drained = self.params.scope_tap.drain();
         self.history.ingest_interleaved(&drained);
 
-        ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, THEME_BACKGROUND);
-        ui.vertical_centered(|ui| {
-            self.draw_header(ui);
-            ui.add_space(8.0);
-
-            if self.show_help {
-                self.draw_help(ui);
-                return;
-            }
-
-            let ceiling = db_to_linear(self.params.ceiling.value());
-            self.draw_scope(ui, ceiling);
-
-            ui.add_space(14.0);
-            // Control cluster: mode and shape switch stacks flanking the knob
-            // row. The stacks fill the knob column height so the segments use
-            // the vertical space and align with the knobs top and bottom.
-            // Zero the auto item-spacing so the gaps are exactly GAP, then a
-            // single leading pad centers the row.
-            const GAP: f32 = 12.0;
-            let knob = KnobSize::Medium.footprint();
-            let cluster_width = tabs::tabs_vertical_width(Mode::variants())
-                + tabs::tabs_vertical_width(Shape::variants())
-                + 4.0 * knob.x
-                + 5.0 * GAP;
-            let setter = gui.param_setter();
-            // Shape only feeds the Fold voice — gray the stack out in the
-            // other modes instead of offering a no-op choice.
-            let shape_enabled = self.params.mode.value() == Mode::Fold;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let lead = ((ui.available_width() - cluster_width) / 2.0).max(0.0);
-                ui.add_space(lead);
-                param_tabs_vertical(ui, &setter, &self.params.mode, knob.y, "mode");
-                ui.add_space(GAP);
-                param_knob(ui, &setter, &self.params.drive, "Drive");
-                ui.add_space(GAP);
-                param_knob(ui, &setter, &self.params.ceiling, "Ceiling");
-                ui.add_space(GAP);
-                param_knob(ui, &setter, &self.params.detail, "Detail");
-                ui.add_space(GAP);
-                param_knob(ui, &setter, &self.params.amount, "Amount");
-                ui.add_space(GAP);
-                ui.add_enabled_ui(shape_enabled, |ui| {
-                    param_tabs_vertical(ui, &setter, &self.params.shape, knob.y, "shape")
-                });
-            });
-            ui.add_space(10.0);
-        });
+        let setter = gui.param_setter();
+        self.draw(ui, &setter);
     }
 }
 
 impl BogdanEditor {
-    /// Name/version line on the left, help toggle on the right — both in one
-    /// 26px strip flush with the top edge, so no layout engine padding can
-    /// creep in above or between them.
-    fn draw_header(&mut self, ui: &mut egui::Ui) {
-        const STRIP: f32 = 26.0;
-        let (rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), STRIP), Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.text(
-            Pos2::new(rect.left() + 12.0, rect.center().y),
-            Align2::LEFT_CENTER,
-            concat!("PPC BOGDAN v", env!("CARGO_PKG_VERSION")),
-            FontId::proportional(12.0),
-            THEME_TEXT,
+    /// Paint the whole window. Host-free apart from `setter`, so it can be
+    /// rendered offscreen.
+    fn draw(&mut self, ui: &mut egui::Ui, setter: &ParamSetter<'_>) {
+        // Every block sits in an exact rect computed from the budget above,
+        // so nothing depends on layout-engine centring or spacing.
+        let window = ui.max_rect();
+        ui.painter().rect_filled(window, 0.0, palette::BG);
+        let left = window.left() + MARGIN;
+        let width = window.width() - 2.0 * MARGIN;
+        let mut top = window.top() + MARGIN;
+        let mut take = |height: f32, gap: f32| {
+            let rect = Rect::from_min_size(Pos2::new(left, top), Vec2::new(width, height));
+            top += height + gap;
+            rect
+        };
+        let header = take(HEADER_HEIGHT, HEADER_GAP);
+        let graph = take(GRAPH_HEIGHT, GRAPH_GAP);
+        let band = take(band_height(), 0.0);
+
+        draw_header(&ui.painter_at(header), header);
+        // The help toggle sits in the header's right end, in its own exact
+        // rect, so it never shifts the title.
+        let help_rect = Rect::from_center_size(
+            Pos2::new(header.right() - 6.0 - 13.0, header.center().y),
+            Vec2::splat(26.0),
         );
-        let button_rect = Rect::from_min_size(
-            Pos2::new(rect.right() - 12.0 - STRIP, rect.top()),
-            Vec2::splat(STRIP),
-        );
-        let mut button_ui = ui.new_child(
+        let mut help_ui = ui.new_child(
             egui::UiBuilder::new()
                 .scope_id(ui.scope_id().with("help-button"))
-                .max_rect(button_rect),
+                .max_rect(help_rect),
         );
-        if button::icon_button(&mut button_ui, "?").clicked() {
+        let glyph = if self.show_help { "×" } else { "?" };
+        if button::icon_button(&mut help_ui, glyph).clicked() {
             self.show_help = !self.show_help;
         }
+
+        if self.show_help {
+            draw_help(ui, graph.union(band));
+            return;
+        }
+        let ceiling_db = self.params.ceiling.value();
+        self.draw_scope(&ui.painter_at(graph), graph, ceiling_db);
+        self.draw_controls(ui, setter, band);
     }
 
-    /// Text help screen shown in place of the scope and controls.
-    fn draw_help(&mut self, ui: &mut egui::Ui) {
-        let panel_width = ui.available_width() - 24.0;
-        let panel_height = ui.available_height() - 10.0;
-        egui::Frame::new()
-            .fill(THEME_HEADER_BG)
-            .stroke(Stroke::new(1.0_f32, GRID_COLOR))
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(14, 12))
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("bogdan-help")
-                    .max_width(panel_width - 28.0)
-                    .max_height(panel_height - 26.0)
-                    .show(ui, |ui| {
-                        ui.set_min_width(panel_width - 28.0);
-                        ui.spacing_mut().item_spacing.y = 6.0;
-                        ui.label(help_text("PPC BOGDAN — detail-preserving clipper", true));
-                        ui.label(help_text(
-                            "A clipper keeps a fixed outer ceiling but throws away everything that \
-                     crossed it. Bogdan folds that information back inward, so the waveform \
-                     keeps the ceiling with smaller detail moving inside the region that \
-                     would otherwise be flat. Output never exceeds the ceiling, and \
-                     unclipped samples pass unchanged.",
-                            false,
-                        ));
-                        ui.add_space(4.0);
-                        ui.label(help_text("MODES", true));
-                        ui.label(help_text(
-                            "CLEAN — plain hard clip; the clipping delta is discarded. The \
-                     reference path.",
-                            false,
-                        ));
-                        ui.label(help_text(
-                            "DETAIL — the original voice: the delta is high-passed, rectified, and \
-                     subtracted inward from the clipped plateau. Suits drum-and-bass.",
-                            false,
-                        ));
-                        ui.label(help_text(
-                            "FOLD — antialiased wavefolder: excursions past the ceiling reflect \
-                     back inside it. SHAPE (sine / triangle) picks the fold curve and only \
-                     applies in this mode.",
-                            false,
-                        ));
-                        ui.add_space(4.0);
-                        ui.label(help_text("CONTROLS", true));
-                        ui.label(help_text(
-                            "DRIVE — input gain into the clipper, 0–24 dB. In FOLD it sets fold \
-                     density.",
-                            false,
-                        ));
-                        ui.label(help_text(
-                            "CEILING — clip threshold, −24–0 dB. In FOLD it sets fold amplitude.",
-                            false,
-                        ));
-                        ui.label(help_text(
-                            "DETAIL — cutoff of the high-pass on the clipping delta, 20–2000 Hz. \
-                     DETAIL mode only.",
-                            false,
-                        ));
-                        ui.label(help_text(
-                            "AMOUNT — effect depth, 0–100%. Inward duck depth in DETAIL (0 equals \
-                     plain hard clip); clip-to-fold blend in FOLD; ignored by CLEAN.",
-                            false,
-                        ));
-                        ui.add_space(4.0);
-                        ui.label(help_text("TIPS", true));
-                        ui.label(help_text(
-                            "Double-click (or ctrl/⌘-click) a knob to reset it to its default.",
-                            false,
-                        ));
-                    });
-            });
+    /// The scope: PROCESSED glowing over a dimmer DRIVEN, between Red
+    /// ceiling guides, with labels in gutters around the plot.
+    fn draw_scope(&self, painter: &Painter, rect: Rect, ceiling_db: f32) {
+        surface::inset(painter, rect);
+        let plot = Rect::from_min_max(
+            Pos2::new(rect.left() + 40.0, rect.top() + 24.0),
+            Pos2::new(rect.right() - 12.0, rect.bottom() - 10.0),
+        );
+
+        let ceiling = db_to_linear(ceiling_db);
+        let safe_ceiling = finite_sample(ceiling).abs().max(f32::MIN_POSITIVE);
+        let vertical_extent = safe_ceiling * 2.0;
+
+        painter.line_segment(
+            [
+                Pos2::new(plot.left(), plot.center().y),
+                Pos2::new(plot.right(), plot.center().y),
+            ],
+            Stroke::new(1.0_f32, palette::STROKE),
+        );
+        painter.text(
+            Pos2::new(plot.left() - 6.0, plot.center().y),
+            Align2::RIGHT_CENTER,
+            "0",
+            FontId::proportional(9.0),
+            palette::TEXT_MUTED,
+        );
+        for polarity in [-1.0_f32, 1.0] {
+            let y = sample_y(polarity * safe_ceiling, vertical_extent, plot);
+            painter.line_segment(
+                [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
+                Stroke::new(1.0_f32, CEILING_COLOR.gamma_multiply(0.7)),
+            );
+            // Both guides sit at ± the ceiling; label them with its level.
+            painter.text(
+                Pos2::new(plot.left() - 6.0, y),
+                Align2::RIGHT_CENTER,
+                format!("{ceiling_db:.1}"),
+                FontId::proportional(9.0),
+                CEILING_COLOR.gamma_multiply(0.85),
+            );
+        }
+
+        let range = self.history.display_range();
+        let peak = self
+            .history
+            .frames
+            .range(range.clone())
+            .map(|frame| frame.driven.abs().max(frame.processed.abs()))
+            .fold(0.0_f32, f32::max);
+        if peak < SILENCE {
+            painter.text(
+                Pos2::new(plot.center().x, plot.center().y - 14.0),
+                Align2::CENTER_CENTER,
+                "waiting for audio",
+                FontId::proportional(11.0),
+                palette::TEXT_MUTED,
+            );
+        } else {
+            let mut driven = Vec::with_capacity(range.len());
+            let mut processed = Vec::with_capacity(range.len());
+            for (display_index, history_index) in range.enumerate() {
+                let x = sample_x(display_index, plot);
+                let frame = self.history.frames[history_index];
+                driven.push(Pos2::new(x, sample_y(frame.driven, vertical_extent, plot)));
+                processed.push(Pos2::new(
+                    x,
+                    sample_y(frame.processed, vertical_extent, plot),
+                ));
+            }
+            if driven.len() > 1 {
+                painter.add(egui::Shape::line(
+                    driven,
+                    Stroke::new(1.2_f32, DRIVEN_COLOR.gamma_multiply(0.75)),
+                ));
+                glow::glow_line_with(painter, &processed, PROCESSED_COLOR, 2, 3.0, 0.22);
+                painter.add(egui::Shape::line(
+                    processed,
+                    Stroke::new(1.5_f32, PROCESSED_COLOR),
+                ));
+            }
+        }
+
+        legend(painter, plot);
+    }
+
+    /// The control band: MODE tabs left, the four knobs centre, SHAPE tabs
+    /// right (only live in Fold), each in an exact rect.
+    fn draw_controls(&mut self, ui: &mut egui::Ui, setter: &ParamSetter<'_>, band: Rect) {
+        surface::panel_lit(ui.painter(), band);
+        let knob = knob_size();
+        let inner = band.shrink(BAND_PAD);
+        let row_top = inner.top() + CAPTION_HEIGHT + CAPTION_GAP;
+        let params = Arc::clone(&self.params);
+
+        // Centre the whole cluster in the band.
+        let lead = ((inner.width() - band_content_width()) / 2.0).max(0.0);
+        let mode_width = tabs::tabs_vertical_width(Mode::variants());
+        let shape_width = tabs::tabs_vertical_width(Shape::variants());
+        let mode = Rect::from_min_size(
+            Pos2::new(inner.left() + lead, row_top),
+            Vec2::new(mode_width, knob.y),
+        );
+        let knobs = Rect::from_min_size(
+            Pos2::new(mode.right() + 2.0 * COLUMN_GAP, row_top),
+            Vec2::new(4.0 * knob.x + 3.0 * GAP, knob.y),
+        );
+        let shape = Rect::from_min_size(
+            Pos2::new(knobs.right() + 2.0 * COLUMN_GAP, row_top),
+            Vec2::new(shape_width, knob.y),
+        );
+
+        caption(ui.painter(), mode.center().x, inner.top(), "MODE");
+        caption(ui.painter(), knobs.center().x, inner.top(), "CLIPPER");
+        caption(ui.painter(), shape.center().x, inner.top(), "SHAPE");
+        for x in [mode.right() + COLUMN_GAP, knobs.right() + COLUMN_GAP] {
+            ui.painter().line_segment(
+                [
+                    Pos2::new(x, inner.top() + 4.0),
+                    Pos2::new(x, inner.bottom() - 4.0),
+                ],
+                Stroke::new(1.0_f32, palette::STROKE),
+            );
+        }
+
+        let mut mode_ui = child(ui, "mode", mode);
+        param_tabs_vertical(&mut mode_ui, setter, &params.mode, knob.y, "mode");
+
+        let mut row = child(ui, "knobs", knobs);
+        row.spacing_mut().item_spacing.x = 0.0;
+        for (index, (param, label)) in [
+            (&params.drive, "Drive"),
+            (&params.ceiling, "Ceiling"),
+            (&params.detail, "Detail"),
+            (&params.amount, "Amount"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index > 0 {
+                row.add_space(GAP);
+            }
+            param_knob(&mut row, setter, param, label);
+        }
+
+        // Shape only feeds the Fold voice — gray the stack out in the
+        // other modes instead of offering a no-op choice.
+        let mut shape_ui = child(ui, "shape", shape);
+        if params.mode.value() != Mode::Fold {
+            shape_ui.disable();
+        }
+        param_tabs_vertical(&mut shape_ui, setter, &params.shape, knob.y, "shape");
     }
 }
 
-/// One styled help line: bold section headers, dim body text.
-fn help_text(text: &str, heading: bool) -> RichText {
-    let text = RichText::new(text).size(12.0);
-    if heading {
-        text.strong().color(THEME_TEXT)
-    } else {
-        text.color(THEME_TEXT_DIM)
+/// A left-to-right child ui filling exactly `rect`.
+fn child(ui: &mut egui::Ui, salt: &str, rect: Rect) -> egui::Ui {
+    ui.new_child(
+        egui::UiBuilder::new()
+            .scope_id(ui.scope_id().with(salt))
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Min)),
+    )
+}
+
+/// Title strip: tracked name, Muted subtitle with the build stamp so the
+/// loaded bundle is identifiable.
+fn draw_header(painter: &Painter, rect: Rect) {
+    surface::panel_lit(painter, rect);
+    let title = text::tracked(
+        painter,
+        Pos2::new(rect.left() + 12.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        "PPC BOGDAN",
+        fonts::heading(13.0),
+        palette::TEXT_PRIMARY,
+        1.5,
+    );
+    painter.text(
+        Pos2::new(title.right() + 10.0, rect.center().y + 1.0),
+        Align2::LEFT_CENTER,
+        concat!("detail clipper · v", env!("CARGO_PKG_VERSION")),
+        FontId::proportional(10.0),
+        palette::TEXT_MUTED,
+    );
+}
+
+/// Small tracked caption centred over a column, in the caption row.
+fn caption(painter: &Painter, center_x: f32, top: f32, label: &str) {
+    text::tracked(
+        painter,
+        Pos2::new(center_x, top + CAPTION_HEIGHT / 2.0),
+        Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(9.0),
+        palette::TEXT_MUTED,
+        1.2,
+    );
+}
+
+/// Legend chips right-aligned in the gutter above the plot.
+fn legend(painter: &Painter, plot: Rect) {
+    let y = plot.top() - 12.0;
+    let mut x = plot.right();
+    for (label, color) in [
+        ("CEILING", CEILING_COLOR),
+        ("PROCESSED", PROCESSED_COLOR),
+        ("DRIVEN", DRIVEN_COLOR),
+    ] {
+        let text_rect = painter.text(
+            Pos2::new(x, y),
+            Align2::RIGHT_CENTER,
+            label,
+            FontId::proportional(9.0),
+            palette::TEXT_SECONDARY,
+        );
+        let swatch_right = text_rect.left() - 4.0;
+        painter.line_segment(
+            [
+                Pos2::new(swatch_right - 12.0, y),
+                Pos2::new(swatch_right, y),
+            ],
+            Stroke::new(2.0_f32, color),
+        );
+        x = swatch_right - 24.0;
     }
+}
+
+/// Help copy: a section heading, then its lines. Mirrors `specs/bogdan.md`.
+const HELP: &[(&str, &[&str])] = &[
+    (
+        "PPC BOGDAN — DETAIL-PRESERVING CLIPPER",
+        &[
+            "A clipper keeps a fixed outer ceiling but throws away everything that crossed \
+             it. Bogdan folds that information back inward, so the waveform keeps the \
+             ceiling with smaller detail moving inside the region that would otherwise be \
+             flat. Output never exceeds the ceiling, and unclipped samples pass unchanged.",
+            "The scope shows the driven input (orange) against the output (cyan), between \
+             the red ceiling guides.",
+        ],
+    ),
+    (
+        "MODE",
+        &[
+            "CLEAN — plain hard clip; the clipping delta is discarded. The reference path.",
+            "DETAIL — the original voice: the delta is high-passed, rectified, and \
+             subtracted inward from the clipped plateau. Suits drum-and-bass.",
+            "FOLD — antialiased wavefolder: excursions past the ceiling reflect back inside \
+             it.",
+        ],
+    ),
+    (
+        "CLIPPER",
+        &[
+            "DRIVE — input gain into the clipper, 0–24 dB. In FOLD it sets fold density.",
+            "CEILING — clip threshold, −24–0 dB. In FOLD it sets fold amplitude.",
+            "DETAIL — cutoff of the high-pass on the clipping delta, 20–2000 Hz. DETAIL \
+             mode only.",
+            "AMOUNT — effect depth, 0–100%. Inward duck depth in DETAIL (0 equals plain \
+             hard clip); clip-to-fold blend in FOLD; ignored by CLEAN.",
+        ],
+    ),
+    (
+        "SHAPE",
+        &["SINE / TRIANGLE — the fold curve. Only applies in FOLD, greyed out otherwise."],
+    ),
+    (
+        "TIPS",
+        &["Double-click (or ctrl/⌘-click) a knob to reset it to its default."],
+    ),
+];
+
+/// Text help in place of the graph and controls.
+fn draw_help(ui: &mut egui::Ui, rect: Rect) {
+    surface::inset(ui.painter(), rect);
+    let mut help = ui.new_child(
+        egui::UiBuilder::new()
+            .scope_id(ui.scope_id().with("help"))
+            .max_rect(rect.shrink2(Vec2::new(18.0, 14.0))),
+    );
+    egui::ScrollArea::vertical()
+        .id_salt("bogdan-help")
+        .auto_shrink([false, false])
+        .show(&mut help, |ui| {
+            ui.spacing_mut().item_spacing.y = 5.0;
+            for (index, (heading, lines)) in HELP.iter().enumerate() {
+                if index > 0 {
+                    ui.add_space(6.0);
+                }
+                ui.label(
+                    egui::RichText::new(*heading)
+                        .font(fonts::heading(11.0))
+                        .extra_letter_spacing(1.2)
+                        .color(palette::ACCENT),
+                );
+                for line in *lines {
+                    ui.label(
+                        egui::RichText::new(*line)
+                            .size(12.0)
+                            .color(palette::TEXT_SECONDARY),
+                    );
+                }
+            }
+        });
 }
 
 pub(crate) fn create(params: Arc<BogdanParams>) -> Option<EguiEditor<BogdanEditor>> {
+    debug_assert!(vertical_budget() <= EDITOR_SIZE.1, "layout overflows");
     let state = EguiEditorState::from_size(
         WindowSize::from_logical(
-            nice_plug::editor::dpi::LogicalSize::new(500.0_f64, 376.0_f64),
+            nice_plug::editor::dpi::LogicalSize::new(
+                f64::from(EDITOR_SIZE.0),
+                f64::from(EDITOR_SIZE.1),
+            ),
             1.0,
         ),
         1.0,
@@ -426,52 +575,19 @@ fn sample_y(sample: f32, vertical_extent: f32, plot: Rect) -> f32 {
     plot.center().y - normalized * plot.height() * 0.5
 }
 
-fn draw_legend(painter: &egui::Painter, plot: Rect) {
-    let top = plot.top() + 2.0;
-    let driven_left = plot.left() + 4.0;
-    painter.line_segment(
-        [
-            Pos2::new(driven_left, top + 5.0),
-            Pos2::new(driven_left + 14.0, top + 5.0),
-        ],
-        Stroke::new(1.5_f32, DRIVEN_COLOR),
-    );
-    painter.text(
-        Pos2::new(driven_left + 19.0, top),
-        Align2::LEFT_TOP,
-        "DRIVEN",
-        FontId::proportional(9.0),
-        DRIVEN_COLOR,
-    );
-
-    let processed_left = driven_left + 76.0;
-    painter.line_segment(
-        [
-            Pos2::new(processed_left, top + 5.0),
-            Pos2::new(processed_left + 14.0, top + 5.0),
-        ],
-        Stroke::new(1.5_f32, PROCESSED_COLOR),
-    );
-    painter.text(
-        Pos2::new(processed_left + 19.0, top),
-        Align2::LEFT_TOP,
-        "PROCESSED",
-        FontId::proportional(9.0),
-        PROCESSED_COLOR,
-    );
-
-    painter.text(
-        Pos2::new(plot.right() - 4.0, top),
-        Align2::RIGHT_TOP,
-        "CEILING",
-        FontId::proportional(9.0),
-        THEME_METER_CLIP,
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_layout_fills_the_window_without_overflowing() {
+        let slack = EDITOR_SIZE.1 - vertical_budget();
+        assert!(slack >= 0.0, "layout overflows the window by {}", -slack);
+        assert!(slack <= 8.0, "{slack} px of dead space at the bottom");
+
+        let used = 2.0 * MARGIN + 2.0 * BAND_PAD + band_content_width();
+        assert!(used <= EDITOR_SIZE.0, "controls need {used} px");
+    }
 
     #[test]
     fn ingests_interleaved_frames_and_sanitizes_non_finite_values() {

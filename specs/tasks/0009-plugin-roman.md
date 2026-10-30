@@ -10,11 +10,11 @@ depends: [0008-roman-dsp-biquad, 0004-neon-ui-controls, 0005-neon-ui-displays]
 
 ## Plan
 
-- [ ] `truce.toml`: Roman entry — category effect, fourcc `Rman`, `vst3_subcategory = "EQ"`, bundle id `roman`.
-- [ ] `plugins/roman` wrapper: params (Type LP/HP/BP/Notch plus Allpass, Cutoff Hz log-scaled, Q, Slope 12/24 dB/oct, Output trim), sanitised process, reset wiring, `rt-paranoid` zero-allocation test.
-- [ ] Neon editor from day one: header (ROMAN, subtitle biquad filter), Type NeonSelect, Cutoff and Q NeonKnobs, Slope segmented tabs, frequency-response curve painted on a neon grid from the current coefficients (UI thread; no audio tap needed).
+- [ ] `plugins/roman` nice-plug wrapper, package `ppc_roman`: `ClapPlugin` (id `com.oiwn.ppc_roman`, features AudioEffect + Filter) and a `vst3`-feature-gated `Vst3Plugin` (subcategory Filter/EQ, fresh class id), like Bogdan and Kirya.
+- [ ] Params (Type LP/HP/BP/Notch plus Allpass, Cutoff Hz via `musictools_core::LogTaper`, Q, Slope 12/24 dB/oct, Output trim), sanitised process, reset wiring, `rt-audit` zero-allocation test on `audio_harness::Harness`.
+- [ ] Neon editor from day one, on the Kirya/Bogdan pattern (header with help, one graph, control band; vertical budget test): frequency-response curve in the graph well from the current coefficients (UI thread; no audio tap needed), Type and Slope tabs, Cutoff/Q/Trim knobs.
 - [ ] Specs: `specs/roman.md` (description, signal chain, parameter reference, gotchas); add Roman to the `overview.md` list.
-- [ ] Build CLAP + VST3 bundles locally: `cargo truce build -p roman --clap --vst3`.
+- [ ] `cargo nice-plug bundle ppc_roman --release`; `just deploy ppc_roman` for the host check.
 
 ## Acceptance
 
@@ -35,7 +35,7 @@ depends: [0008-roman-dsp-biquad, 0004-neon-ui-controls, 0005-neon-ui-displays]
 
 ## Summary
 
-Roman: biquad filter plugin — Truce wrapper, params, and a neon editor with a live response curve.
+Roman: biquad filter plugin — nice-plug wrapper, params, and a neon editor with a live response curve.
 
 ## Log
 

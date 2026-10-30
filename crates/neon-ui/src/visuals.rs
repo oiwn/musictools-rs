@@ -1,10 +1,10 @@
 //! The Dark Neon egui theme.
 //!
-//! [`dark_neon_visuals`] is a drop-in replacement for
-//! `truce_egui::theme::dark()`, passed to `EguiEditor::with_visuals`. egui 0.34
-//! keeps text styles and spacing on `Style`, not `Visuals`, so this covers
-//! fills, widget colors, selection, corner radii, and shadows; typography is
-//! set per-painter by the kit's widgets, as the current editors already do.
+//! [`dark_neon_visuals`] is what editors install with `ctx.set_visuals` (the
+//! plugins do it in their nice-plug-egui build callback; the showcase at
+//! startup). egui keeps text styles and spacing on `Style`, not `Visuals`, so
+//! this covers fills, widget colors, selection, corner radii, and shadows;
+//! typography is set per-painter by the kit's widgets.
 
 use crate::palette::{self, HAIRLINE};
 use egui::{Color32, CornerRadius, Stroke, Visuals};

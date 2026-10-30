@@ -3032,6 +3032,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppc_kirya"
+version = "0.3.0"
+dependencies = [
+ "audio-harness",
+ "egui",
+ "kirya-dsp",
+ "musictools-core",
+ "neon-ui",
+ "nice-plug",
+ "nice-plug-egui",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

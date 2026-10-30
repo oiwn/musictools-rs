@@ -29,6 +29,7 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             cc.egui_ctx
                 .set_visuals(neon_ui::visuals::dark_neon_visuals());
+            neon_ui::fonts::install(&cc.egui_ctx);
             Ok(Box::new(Showcase {
                 state: State::new(),
             }))

@@ -1,363 +1,410 @@
-//! Truce wrapper for the Kirya plate reverb.
+//! nice-plug wrapper for the Kirya plate reverb.
 
-use std::sync::Mutex;
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use kirya_dsp::analysis::IrRender;
 use kirya_dsp::{KiryaReverb, KiryaSettings};
-use truce::prelude::*;
+use musictools_core::LogTaper;
+use nice_plug::prelude::*;
 
 mod editor;
 mod task;
 
 pub use task::RenderIr;
 
-/// Parameter ids are a permanent contract: a host stores automation against
-/// them, so an id must never be reused or renumbered.
+/// Taper shared by the four filter cutoffs.
+const CUTOFF_TAPER: LogTaper = LogTaper::new(20.0, 20_000.0);
+/// Taper of the modulation rate.
+const MOD_RATE_TAPER: LogTaper = LogTaper::new(0.01, 20.0);
+
+/// Ids are a permanent contract: a host stores automation against them, so an
+/// id must never be renamed or reused.
+///
+/// The five log-tapered params (the cutoffs and Mod Rate) store their knob
+/// position `0..=1`, not hertz: nice-plug has no log range, and a power-curve
+/// range over 1000:1 squashes the low end. [`LogTaper`] maps position to
+/// hertz exactly as truce's `log(min, max)` did, and smoothing the position
+/// exponentially is a constant-ratio glide in hertz.
 #[derive(Params)]
 pub struct KiryaParams {
-    #[param(
-        id = 0,
-        name = "Dry",
-        range = "linear(0, 1)",
-        default = 1,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "dry"]
     pub dry: FloatParam,
 
-    #[param(
-        id = 1,
-        name = "Wet",
-        range = "linear(0, 1)",
-        default = 0.5,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "wet"]
     pub wet: FloatParam,
 
-    /// Pre-delay and Size retune delay lengths, so both take the slow
-    /// `exp(50)` glide: it avoids zipper noise and turns a knob sweep into a
-    /// musical tape-style pitch slide.
-    #[param(
-        id = 2,
-        name = "Pre-Delay",
-        range = "skewed(0, 500, 0.5)",
-        default = 0,
-        unit = "ms",
-        smooth = "exp(50)"
-    )]
+    /// Pre-delay and Size retune delay lengths, so both take the slow 50 ms
+    /// glide: it avoids zipper noise and turns a knob sweep into a musical
+    /// tape-style pitch slide.
+    #[id = "pre_delay"]
     pub pre_delay: FloatParam,
 
-    #[param(
-        id = 3,
-        name = "Size",
-        range = "skewed(0.05, 4, 0.4)",
-        default = 1,
-        smooth = "exp(50)"
-    )]
+    #[id = "size"]
     pub size: FloatParam,
 
-    #[param(
-        id = 4,
-        name = "Diffusion",
-        range = "linear(0, 1)",
-        default = 1,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "diffusion"]
     pub diffusion: FloatParam,
 
-    #[param(
-        id = 5,
-        name = "Decay",
-        range = "linear(0, 1)",
-        default = 0.55,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "decay"]
     pub decay: FloatParam,
 
-    // The four cutoffs use `log` smoothing rather than `exp`: a frequency
-    // reads as smooth when it ramps by a constant ratio, not a constant delta.
-    // All four endpoints are strictly positive, so the log ramp is always
-    // valid.
-    #[param(
-        id = 6,
-        name = "In Low Cut",
-        range = "log(20, 20000)",
-        default = 20,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "log(20)"
-    )]
+    #[id = "input_low_cut"]
     pub input_low_cut: FloatParam,
 
-    #[param(
-        id = 7,
-        name = "In High Cut",
-        range = "log(20, 20000)",
-        default = 20000,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "log(20)"
-    )]
+    #[id = "input_high_cut"]
     pub input_high_cut: FloatParam,
 
-    #[param(
-        id = 8,
-        name = "Rev Low Cut",
-        range = "log(20, 20000)",
-        default = 20,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "log(20)"
-    )]
+    #[id = "reverb_low_cut"]
     pub reverb_low_cut: FloatParam,
 
-    #[param(
-        id = 9,
-        name = "Rev High Cut",
-        range = "log(20, 20000)",
-        default = 10000,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "log(20)"
-    )]
+    #[id = "reverb_high_cut"]
     pub reverb_high_cut: FloatParam,
 
-    #[param(
-        id = 10,
-        name = "Mod Rate",
-        range = "log(0.01, 20)",
-        default = 1,
-        unit = "Hz",
-        format = "format_hz_param",
-        smooth = "log(20)"
-    )]
+    #[id = "mod_rate"]
     pub mod_rate: FloatParam,
 
-    #[param(
-        id = 11,
-        name = "Mod Depth",
-        range = "linear(0, 1)",
-        default = 0.5,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "mod_depth"]
     pub mod_depth: FloatParam,
 
     /// Modulation waveform: 0% is a triangle, 100% a sine.
-    #[param(
-        id = 12,
-        name = "Mod Shape",
-        range = "linear(0, 1)",
-        default = 0.5,
-        unit = "%",
-        smooth = "exp(5)"
-    )]
+    #[id = "mod_shape"]
     pub mod_shape: FloatParam,
 
     /// Hold the tank indefinitely. The input stays live, so new material can
     /// be layered into a frozen tail.
-    #[param(id = 13, name = "Freeze", default = false)]
+    #[id = "freeze"]
     pub freeze: BoolParam,
 
     /// Latest finished impulse-response render, handed from the background
     /// task to the editor. `process` never touches it, so a plain `Mutex` is
     /// safe here — no audio-thread lock is ever taken.
-    #[skip]
     pub ir_slot: Arc<Mutex<Option<Box<IrRender>>>>,
 
     /// Bumped every time `ir_slot` is replaced, so the editor can tell a new
     /// render from the one it already uploaded.
-    #[skip]
     pub ir_generation: Arc<AtomicU64>,
 
-    /// Host sample rate as `f64` bits, published by `reset`.
+    /// Id of the newest render request. nice-plug queues every task it is
+    /// given, so a render whose id is no longer the newest skips itself (see
+    /// [`RenderIr::run`]).
+    pub ir_requested: Arc<AtomicU64>,
+
+    /// Host sample rate as `f64` bits, published on activation.
     ///
-    /// `PluginContext` does not carry the rate, and the IR probe has to render
-    /// at whatever the host is playing or the displayed reverb time would be
-    /// wrong at anything but 48 kHz. Zero until the first activation.
-    #[skip]
+    /// The editor context does not carry the rate, and the IR probe has to
+    /// render at whatever the host is playing or the displayed reverb time
+    /// would be wrong at anything but 48 kHz. Zero until the first activation.
     pub sample_rate_bits: Arc<AtomicU64>,
 }
 
+/// A `0..1` amount shown and typed as a whole percentage.
+fn percent(name: &str, default: f32) -> FloatParam {
+    FloatParam::new(name, default, FloatRange::Linear { min: 0.0, max: 1.0 })
+        .with_smoother(SmoothingStyle::Exponential(5.0))
+        .with_unit(" %")
+        .with_value_to_string(Arc::new(musictools_core::format_percent))
+        .with_string_to_value(Arc::new(musictools_core::parse_percent))
+        .with_step_size(0.01)
+}
+
+/// A frequency stored as its knob position on `taper`, shown and typed in Hz.
+///
+/// `format_hz` prints its own unit, so the param carries none.
+fn log_hz(name: &str, default_hz: f32, taper: LogTaper) -> FloatParam {
+    FloatParam::new(
+        name,
+        taper.to_position(default_hz),
+        FloatRange::Linear { min: 0.0, max: 1.0 },
+    )
+    .with_smoother(SmoothingStyle::Exponential(20.0))
+    .with_value_to_string(Arc::new(move |position| {
+        musictools_core::format_hz(f64::from(taper.to_value(position)))
+    }))
+    .with_string_to_value(Arc::new(move |text| {
+        musictools_core::parse_hz(text).map(|hz| taper.to_position(hz))
+    }))
+}
+
+impl Default for KiryaParams {
+    fn default() -> Self {
+        Self {
+            dry: percent("Dry", 1.0),
+            wet: percent("Wet", 0.5),
+            // Same `t^factor` taper as truce's `skewed(0, 500, 0.5)`.
+            pre_delay: FloatParam::new(
+                "Pre-Delay",
+                0.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 500.0,
+                    factor: 0.5,
+                },
+            )
+            .with_smoother(SmoothingStyle::Exponential(50.0))
+            .with_unit(" ms")
+            .with_value_to_string(Arc::new(|value| format!("{value:.1}")))
+            .with_step_size(0.1),
+            size: FloatParam::new(
+                "Size",
+                1.0,
+                FloatRange::Skewed {
+                    min: 0.05,
+                    max: 4.0,
+                    factor: 0.4,
+                },
+            )
+            .with_smoother(SmoothingStyle::Exponential(50.0))
+            .with_value_to_string(Arc::new(|value| format!("{value:.2}")))
+            .with_step_size(0.01),
+            diffusion: percent("Diffusion", 1.0),
+            decay: percent("Decay", 0.55),
+            input_low_cut: log_hz("In Low Cut", 20.0, CUTOFF_TAPER),
+            input_high_cut: log_hz("In High Cut", 20_000.0, CUTOFF_TAPER),
+            reverb_low_cut: log_hz("Rev Low Cut", 20.0, CUTOFF_TAPER),
+            reverb_high_cut: log_hz("Rev High Cut", 10_000.0, CUTOFF_TAPER),
+            mod_rate: log_hz("Mod Rate", 1.0, MOD_RATE_TAPER),
+            mod_depth: percent("Mod Depth", 0.5),
+            mod_shape: percent("Mod Shape", 0.5),
+            freeze: BoolParam::new("Freeze", false),
+            ir_slot: Arc::new(Mutex::new(None)),
+            ir_generation: Arc::new(AtomicU64::new(0)),
+            ir_requested: Arc::new(AtomicU64::new(0)),
+            sample_rate_bits: Arc::new(AtomicU64::new(0)),
+        }
+    }
+}
+
 impl KiryaParams {
-    /// Display formatter for every Hz parameter, named by `#[param(format)]`.
-    ///
-    /// Truce's built-in Hz formatter prints whole hertz below 1 kHz, which
-    /// turns Mod Rate's whole `0.01..20` range into "0 Hz" and "1 Hz".
-    #[allow(clippy::unused_self)]
-    fn format_hz_param(&self, value: f64) -> String {
-        musictools_core::format_hz(value)
+    /// Every float param, for bulk smoother work.
+    fn floats(&self) -> [&FloatParam; 13] {
+        [
+            &self.dry,
+            &self.wet,
+            &self.pre_delay,
+            &self.size,
+            &self.diffusion,
+            &self.decay,
+            &self.input_low_cut,
+            &self.input_high_cut,
+            &self.reverb_low_cut,
+            &self.reverb_high_cut,
+            &self.mod_rate,
+            &self.mod_depth,
+            &self.mod_shape,
+        ]
     }
 
-    /// Read every parameter once, advancing all smoothers exactly one sample.
-    fn settings(&self) -> KiryaSettings {
+    /// Settle every smoother on its target, as on activation.
+    fn snap_smoothers(&self) {
+        for param in self.floats() {
+            param.smoothed.reset(param.value());
+        }
+    }
+
+    /// DSP settings with each float read exactly once through `read`.
+    fn build_settings(&self, read: impl Fn(&FloatParam) -> f32) -> KiryaSettings {
         KiryaSettings {
-            dry: self.dry.read(),
-            wet: self.wet.read(),
-            pre_delay_ms: self.pre_delay.read(),
-            size: self.size.read(),
-            diffusion: self.diffusion.read(),
-            decay: self.decay.read(),
-            input_low_cut_hz: self.input_low_cut.read(),
-            input_high_cut_hz: self.input_high_cut.read(),
-            reverb_low_cut_hz: self.reverb_low_cut.read(),
-            reverb_high_cut_hz: self.reverb_high_cut.read(),
-            mod_rate_hz: self.mod_rate.read(),
-            mod_depth: self.mod_depth.read(),
-            mod_shape: self.mod_shape.read(),
+            dry: read(&self.dry),
+            wet: read(&self.wet),
+            pre_delay_ms: read(&self.pre_delay),
+            size: read(&self.size),
+            diffusion: read(&self.diffusion),
+            decay: read(&self.decay),
+            input_low_cut_hz: CUTOFF_TAPER.to_value(read(&self.input_low_cut)),
+            input_high_cut_hz: CUTOFF_TAPER.to_value(read(&self.input_high_cut)),
+            reverb_low_cut_hz: CUTOFF_TAPER.to_value(read(&self.reverb_low_cut)),
+            reverb_high_cut_hz: CUTOFF_TAPER.to_value(read(&self.reverb_high_cut)),
+            mod_rate_hz: MOD_RATE_TAPER.to_value(read(&self.mod_rate)),
+            mod_depth: read(&self.mod_depth),
+            mod_shape: read(&self.mod_shape),
             freeze: self.freeze.value(),
         }
     }
 
-    /// Read every parameter's raw target, advancing nothing.
+    /// Advance every smoother one sample and return the settings. Audio
+    /// thread only.
+    fn settings(&self) -> KiryaSettings {
+        self.build_settings(|param| param.smoothed.next())
+    }
+
+    /// Read every parameter's target, advancing nothing.
     ///
     /// The smoothers belong to the audio thread; anything off it — the IR
     /// render task, the editor's change detection — must use this instead of
     /// [`Self::settings`], or it steals samples from `process`.
     pub(crate) fn target_settings(&self) -> KiryaSettings {
-        KiryaSettings {
-            dry: self.dry.value(),
-            wet: self.wet.value(),
-            pre_delay_ms: self.pre_delay.value(),
-            size: self.size.value(),
-            diffusion: self.diffusion.value(),
-            decay: self.decay.value(),
-            input_low_cut_hz: self.input_low_cut.value(),
-            input_high_cut_hz: self.input_high_cut.value(),
-            reverb_low_cut_hz: self.reverb_low_cut.value(),
-            reverb_high_cut_hz: self.reverb_high_cut.value(),
-            mod_rate_hz: self.mod_rate.value(),
-            mod_depth: self.mod_depth.value(),
-            mod_shape: self.mod_shape.value(),
-            freeze: self.freeze.value(),
+        self.build_settings(FloatParam::value)
+    }
+}
+
+/// Kirya, the Dattorro plate reverb.
+pub struct Kirya {
+    params: Arc<KiryaParams>,
+    reverb: KiryaReverb,
+}
+
+impl Default for Kirya {
+    fn default() -> Self {
+        Self {
+            params: Arc::new(KiryaParams::default()),
+            reverb: KiryaReverb::default(),
         }
     }
 }
 
-/// Per-instance reverb state.
-#[derive(Default)]
-pub struct KiryaState {
-    reverb: KiryaReverb,
-    /// Whether the last processed sample was frozen, so `tail` can report an
-    /// infinite tail without reaching into the DSP.
-    frozen: bool,
+impl Kirya {
+    /// Size the reverb for `sample_rate`, publish the rate for the editor's
+    /// IR probe, and snap smoothers to their targets (the wrapper does the
+    /// snap on activation too; tests call this directly).
+    fn configure(&mut self, sample_rate: f64) {
+        self.reverb.reset(sample_rate);
+        self.params
+            .sample_rate_bits
+            .store(sample_rate.to_bits(), Ordering::Relaxed);
+        self.params.snap_smoothers();
+    }
 }
 
-/// Plugin descriptor for the Kirya plate reverb.
-pub struct Kirya;
+impl Plugin for Kirya {
+    const NAME: &'static str = "ppc_kirya";
+    const VENDOR: &'static str = musictools_core::VENDOR_NAME;
+    const URL: &'static str = "https://github.com/oiwn/musictools-rs";
+    const EMAIL: &'static str = "oiwn@localhost";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(2),
+            main_output_channels: NonZeroU32::new(2),
+            ..AudioIOLayout::const_default()
+        },
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(1),
+            main_output_channels: NonZeroU32::new(1),
+            ..AudioIOLayout::const_default()
+        },
+    ];
 
-impl PluginLogic for Kirya {
-    type Params = KiryaParams;
-    type DspState = KiryaState;
+    type Editor = nice_plug_egui::EguiEditor<editor::KiryaEditor>;
+    type SysExMessage = ();
+    type BackgroundTask = RenderIr;
 
-    // `PRESERVE_DSP_STATE` is left at the trait default of `true` so a live
-    // tail survives an editor reload.
+    fn params(&self) -> Arc<dyn Params> {
+        self.params.clone()
+    }
 
-    fn reset(state: &mut Self::DspState, params: &Self::Params, config: &AudioConfig) {
-        state.reverb.reset(config.sample_rate);
-        state.frozen = false;
-        params
-            .sample_rate_bits
-            .store(config.sample_rate.to_bits(), Ordering::Relaxed);
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        let params = self.params.clone();
+        Box::new(move |task: RenderIr| task.run(&params))
+    }
+
+    fn activate(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl ActivateContext<Self>,
+    ) -> bool {
+        self.configure(f64::from(buffer_config.sample_rate));
+        true
+    }
+
+    /// Clear the tail without reallocating: this can run on the audio thread.
+    fn reset(&mut self) {
+        self.reverb.clear();
     }
 
     fn process(
-        state: &mut Self::DspState,
-        params: &Self::Params,
-        buffer: &mut AudioBuffer,
-        _events: &EventList,
-        _context: &mut ProcessContext,
+        &mut self,
+        buffer: &mut Buffer<'_>,
+        _aux: &mut AuxiliaryBuffers<'_>,
+        _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        let channels = buffer.channels();
-        if channels == 0 {
-            return ProcessStatus::Normal;
-        }
-
-        for sample_index in 0..buffer.num_samples() {
+        let mut frozen = false;
+        for mut samples in buffer.iter_samples() {
             // One read of every parameter per frame, before the channel work:
             // the tank is mono, so reading per channel would advance each
             // smoother twice on a stereo track.
-            let settings = params.settings();
-            state.frozen = settings.freeze;
+            let settings = self.params.settings();
+            frozen = settings.freeze;
 
-            let left = buffer.input(0)[sample_index];
-            let right = if channels > 1 {
-                buffer.input(1)[sample_index]
-            } else {
-                left
+            let Some(&mut left) = samples.get_mut(0) else {
+                continue;
             };
+            let right = samples.get_mut(1).map_or(left, |right| *right);
+            let frame = self.reverb.process(left, right, settings);
 
-            let frame = state.reverb.process(left, right, settings);
-
-            buffer.output(0)[sample_index] = frame.left;
-            if channels > 1 {
-                buffer.output(1)[sample_index] = frame.right;
+            if let Some(left) = samples.get_mut(0) {
+                *left = frame.left;
+            }
+            if let Some(right) = samples.get_mut(1) {
+                *right = frame.right;
             }
         }
 
-        // Any channel past the second is a layout the plugin does not claim to
-        // support; leave it silent rather than passing it through unprocessed.
-        for channel in 2..channels {
-            buffer.output(channel)[..].fill(0.0);
-        }
-
-        ProcessStatus::Normal
-    }
-
-    /// A frozen tank never decays, so report an infinite tail and keep the
-    /// host from cutting the track off underneath it.
-    fn tail(state: &Self::DspState) -> u32 {
-        if state.frozen {
-            u32::MAX
+        // A frozen tank never decays: keep the host from suspending the
+        // plugin underneath it.
+        if frozen {
+            ProcessStatus::KeepAlive
         } else {
-            state.reverb.tail_samples()
+            ProcessStatus::Tail(self.reverb.tail_samples())
         }
     }
 
-    fn editor(params: Arc<Self::Params>) -> Box<dyn Editor> {
-        editor::create(params)
+    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        editor::create(self.params.clone(), async_executor)
     }
 }
 
-truce::plugin! {
-    logic: Kirya,
-    params: KiryaParams,
-    tasks: [RenderIr],
+impl ClapPlugin for Kirya {
+    const CLAP_ID: &'static str = "com.oiwn.ppc_kirya";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Dattorro plate reverb");
+    const CLAP_MANUAL_URL: Option<&'static str> = None;
+    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_FEATURES: &'static [ClapFeature] = &[
+        ClapFeature::AudioEffect,
+        ClapFeature::Reverb,
+        ClapFeature::Stereo,
+    ];
 }
 
-truce::enable_rt_paranoid!();
+#[cfg(feature = "vst3")]
+impl Vst3Plugin for Kirya {
+    const VST3_CLASS_ID: [u8; 16] = *b"ppc_kirya_000001";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Fx, Vst3SubCategory::Reverb];
+}
+
+nice_export_clap!(Kirya);
+#[cfg(feature = "vst3")]
+nice_export_vst3!(Kirya);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use audio_harness::{Harness, automate};
 
     const SAMPLE_RATE: f64 = 48_000.0;
+    #[allow(clippy::cast_possible_truncation)]
+    const RATE: f32 = SAMPLE_RATE as f32;
 
-    /// Drive `blocks` blocks of `input` through a fresh instance.
-    fn run(
-        state: &mut KiryaState,
-        params: &KiryaParams,
-        input: &[f32],
-        output_left: &mut [f32],
-        output_right: &mut [f32],
-    ) {
-        let inputs: [&[f32]; 2] = [input, input];
-        let mut outputs: [&mut [f32]; 2] = [output_left, output_right];
-        let mut buffer = AudioBuffer::from_slices_checked(&inputs, &mut outputs, input.len());
-        let events = EventList::default();
-        let mut output_events = EventList::default();
-        let transport = TransportInfo::default();
-        let mut context =
-            ProcessContext::new(&transport, SAMPLE_RATE, input.len(), &mut output_events);
+    fn configured() -> Kirya {
+        let mut plugin = Kirya::default();
+        plugin.configure(SAMPLE_RATE);
+        plugin
+    }
 
-        assert_eq!(
-            Kirya::process(state, params, &mut buffer, &events, &mut context),
-            ProcessStatus::Normal
-        );
+    /// Run one stereo block of `input` (both channels) through `plugin`.
+    fn run(plugin: &mut Kirya, harness: &mut Harness<Kirya>, input: &[f32]) -> ProcessStatus {
+        for channel in 0..harness.channels() {
+            harness.set_input(channel, input);
+        }
+        harness.process(plugin)
+    }
+
+    /// The display string of a param at a plain value.
+    fn shown(param: &FloatParam, plain: f32) -> String {
+        param.normalized_value_to_string(param.preview_normalized(plain), true)
     }
 
     #[test]
@@ -369,15 +416,12 @@ mod tests {
         // channel and prove nothing.
         const BLOCK: usize = 2_048;
 
-        let params = KiryaParams::default();
-        let mut state = KiryaState::default();
-        Kirya::reset(&mut state, &params, &AudioConfig::new(SAMPLE_RATE, BLOCK));
-
+        let mut plugin = configured();
+        let mut harness = Harness::new(2, BLOCK);
         let mut input = [0.0_f32; BLOCK];
         input[0] = 1.0;
-        let mut left = [0.0_f32; BLOCK];
-        let mut right = [0.0_f32; BLOCK];
-        run(&mut state, &params, &input, &mut left, &mut right);
+        run(&mut plugin, &mut harness, &input);
+        let (left, right) = (harness.output(0), harness.output(1));
 
         // Dry defaults to 100%, so the impulse itself survives.
         assert!((left[0] - 1.0).abs() < 0.05, "dry impulse was {}", left[0]);
@@ -394,60 +438,97 @@ mod tests {
     }
 
     #[test]
-    fn every_hz_parameter_displays_with_useful_precision() {
-        // Truce's built-in Hz formatter rounds to whole hertz below 1 kHz, so
-        // without the `format` hook Mod Rate reads "0 Hz" across the bottom
-        // half of its travel. This asserts the hook is actually wired up.
+    fn readouts_match_the_truce_build() {
+        // The strings the truce Kirya showed, so hosts and users see the same
+        // values after the port. Percent params now print the unit once
+        // with a space ("55 %"), like Bogdan.
         let params = KiryaParams::default();
-        let format = |id: u32, value: f64| params.format_value(id, value).unwrap();
 
-        assert_eq!(format(10, 0.01), "0.01 Hz");
-        assert_eq!(format(10, 1.0), "1.00 Hz");
-        assert_eq!(format(10, 20.0), "20.0 Hz");
-
-        for id in 6..=9 {
-            assert_eq!(format(id, 20.0), "20.0 Hz");
-            assert_eq!(format(id, 440.0), "440 Hz");
-            assert_eq!(format(id, 10_000.0), "10.00 kHz");
+        assert_eq!(
+            shown(&params.mod_rate, MOD_RATE_TAPER.to_position(0.01)),
+            "0.01 Hz"
+        );
+        assert_eq!(
+            shown(&params.mod_rate, MOD_RATE_TAPER.to_position(1.0)),
+            "1.00 Hz"
+        );
+        assert_eq!(
+            shown(&params.mod_rate, MOD_RATE_TAPER.to_position(20.0)),
+            "20.0 Hz"
+        );
+        for param in [
+            &params.input_low_cut,
+            &params.input_high_cut,
+            &params.reverb_low_cut,
+            &params.reverb_high_cut,
+        ] {
+            assert_eq!(shown(param, CUTOFF_TAPER.to_position(20.0)), "20.0 Hz");
+            assert_eq!(shown(param, CUTOFF_TAPER.to_position(440.0)), "440 Hz");
+            assert_eq!(
+                shown(param, CUTOFF_TAPER.to_position(10_000.0)),
+                "10.00 kHz"
+            );
         }
 
-        // Params that were already fine must not have changed.
-        assert_eq!(format(3, 1.0), "1.00");
-        assert_eq!(format(5, 0.55), "55%");
-        assert_eq!(format(2, 0.0), "0.0 ms");
+        assert_eq!(shown(&params.size, 1.0), "1.00");
+        assert_eq!(shown(&params.decay, 0.55), "55 %");
+        assert_eq!(shown(&params.pre_delay, 0.0), "0.0 ms");
+    }
+
+    #[test]
+    fn log_knobs_keep_the_exact_truce_taper() {
+        // truce's `log(20, 20000)`: half travel is the geometric mean.
+        let params = KiryaParams::default();
+        let hz = |position: f32| CUTOFF_TAPER.to_value(position);
+        assert!((hz(0.5) - 632.46).abs() < 0.05, "{}", hz(0.5));
+        assert_eq!(
+            params.input_low_cut.normalized_value_to_string(0.5, true),
+            "632 Hz"
+        );
+        // Defaults land where truce put them.
+        let settings = params.target_settings();
+        assert!((settings.input_low_cut_hz - 20.0).abs() < 1.0e-3);
+        assert!((settings.input_high_cut_hz - 20_000.0).abs() < 0.5);
+        assert!((settings.reverb_high_cut_hz - 10_000.0).abs() < 0.5);
+        assert!((settings.mod_rate_hz - 1.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn typed_values_parse_back() {
+        let params = KiryaParams::default();
+        for (text, hz) in [("440", 440.0), ("440 Hz", 440.0), ("2.5 kHz", 2_500.0)] {
+            let position = params
+                .reverb_high_cut
+                .string_to_normalized_value(text)
+                .unwrap();
+            let back = CUTOFF_TAPER.to_value(position);
+            assert!((back - hz).abs() / hz < 1.0e-3, "{text} came back {back}");
+        }
+        let normalized = params.wet.string_to_normalized_value("25 %").unwrap();
+        assert!((params.wet.preview_plain(normalized) - 0.25).abs() < 1.0e-6);
+        let normalized = params.pre_delay.string_to_normalized_value("120").unwrap();
+        assert!((params.pre_delay.preview_plain(normalized) - 120.0).abs() < 0.05);
     }
 
     #[test]
     fn a_mono_layout_is_processed_without_reading_a_second_channel() {
-        let params = KiryaParams::default();
-        let mut state = KiryaState::default();
-        Kirya::reset(&mut state, &params, &AudioConfig::new(SAMPLE_RATE, 256));
-
+        let mut plugin = configured();
+        let mut harness = Harness::new(1, 256);
         let mut input = [0.0_f32; 256];
         input[0] = 1.0;
-        let inputs: [&[f32]; 1] = [&input];
-        let mut output = [0.0_f32; 256];
-        let mut outputs: [&mut [f32]; 1] = [&mut output];
-        let mut buffer = AudioBuffer::from_slices_checked(&inputs, &mut outputs, 256);
-        let events = EventList::default();
-        let mut output_events = EventList::default();
-        let transport = TransportInfo::default();
-        let mut context = ProcessContext::new(&transport, SAMPLE_RATE, 256, &mut output_events);
 
-        assert_eq!(
-            Kirya::process(&mut state, &params, &mut buffer, &events, &mut context),
-            ProcessStatus::Normal
-        );
-        assert!(output.iter().all(|s| s.is_finite()));
-        assert!((output[0] - 1.0).abs() < 0.05);
+        assert!(matches!(
+            run(&mut plugin, &mut harness, &input),
+            ProcessStatus::Tail(_)
+        ));
+        assert!(harness.output(0).iter().all(|s| s.is_finite()));
+        assert!((harness.output(0)[0] - 1.0).abs() < 0.05);
     }
 
     #[test]
     fn non_finite_host_input_never_reaches_the_output() {
-        let params = KiryaParams::default();
-        let mut state = KiryaState::default();
-        Kirya::reset(&mut state, &params, &AudioConfig::new(SAMPLE_RATE, 256));
-
+        let mut plugin = configured();
+        let mut harness = Harness::new(2, 256);
         let input: Vec<f32> = (0..256)
             .map(|n| match n % 4 {
                 0 => f32::NAN,
@@ -456,82 +537,75 @@ mod tests {
                 _ => 0.5,
             })
             .collect();
-        let mut left = [0.0_f32; 256];
-        let mut right = [0.0_f32; 256];
 
         for _ in 0..8 {
-            run(&mut state, &params, &input, &mut left, &mut right);
-            assert!(left.iter().chain(right.iter()).all(|s| s.is_finite()));
+            run(&mut plugin, &mut harness, &input);
+            assert!(
+                harness
+                    .output(0)
+                    .iter()
+                    .chain(harness.output(1))
+                    .all(|s| s.is_finite())
+            );
         }
     }
 
     #[test]
-    fn the_reported_tail_is_finite_while_running_and_infinite_while_frozen() {
-        let params = KiryaParams::default();
-        let mut state = KiryaState::default();
-        Kirya::reset(&mut state, &params, &AudioConfig::new(SAMPLE_RATE, 256));
+    fn the_reported_tail_is_finite_while_running_and_kept_alive_while_frozen() {
+        let mut plugin = configured();
+        let mut harness = Harness::new(2, 256);
+        let silence = [0.0_f32; 256];
 
-        let input = [0.0_f32; 256];
-        let mut left = [0.0_f32; 256];
-        let mut right = [0.0_f32; 256];
+        match run(&mut plugin, &mut harness, &silence) {
+            ProcessStatus::Tail(samples) => {
+                assert!(samples > 0, "a reverb with no tail is not a reverb");
+            }
+            other => panic!("expected a tail, got {other:?}"),
+        }
 
-        run(&mut state, &params, &input, &mut left, &mut right);
-        let running = Kirya::tail(&state);
-        assert!(running > 0, "a reverb with no tail is not a reverb");
-        assert!(running < u32::MAX);
+        automate(&plugin.params.freeze, true, RATE);
+        assert_eq!(
+            run(&mut plugin, &mut harness, &silence),
+            ProcessStatus::KeepAlive
+        );
 
-        params.freeze.set_value(true);
-        run(&mut state, &params, &input, &mut left, &mut right);
-        assert_eq!(Kirya::tail(&state), u32::MAX);
-
-        params.freeze.set_value(false);
-        run(&mut state, &params, &input, &mut left, &mut right);
-        assert!(Kirya::tail(&state) < u32::MAX);
+        automate(&plugin.params.freeze, false, RATE);
+        assert!(matches!(
+            run(&mut plugin, &mut harness, &silence),
+            ProcessStatus::Tail(_)
+        ));
     }
 
     #[test]
     fn reset_clears_the_tail_between_activations() {
-        let params = KiryaParams::default();
-        let mut used = KiryaState::default();
-        let mut fresh = KiryaState::default();
-        let config = AudioConfig::new(SAMPLE_RATE, 256);
-        Kirya::reset(&mut used, &params, &config);
-        Kirya::reset(&mut fresh, &params, &config);
+        let mut used = configured();
+        let mut fresh = configured();
+        let mut used_harness = Harness::new(2, 256);
+        let mut fresh_harness = Harness::new(2, 256);
 
         let mut loud = [0.0_f32; 256];
         loud[0] = 1.0;
-        let mut left = [0.0_f32; 256];
-        let mut right = [0.0_f32; 256];
         for _ in 0..8 {
-            run(&mut used, &params, &loud, &mut left, &mut right);
+            run(&mut used, &mut used_harness, &loud);
         }
-        Kirya::reset(&mut used, &params, &config);
-        params.snap_smoothers();
+        used.reset();
 
         let silence = [0.0_f32; 256];
-        let mut used_left = [0.0_f32; 256];
-        let mut used_right = [0.0_f32; 256];
-        let mut fresh_left = [0.0_f32; 256];
-        let mut fresh_right = [0.0_f32; 256];
-        run(
-            &mut used,
-            &params,
-            &silence,
-            &mut used_left,
-            &mut used_right,
-        );
-        run(
-            &mut fresh,
-            &params,
-            &silence,
-            &mut fresh_left,
-            &mut fresh_right,
-        );
-        assert_eq!(used_left, fresh_left);
-        assert_eq!(used_right, fresh_right);
+        run(&mut used, &mut used_harness, &silence);
+        run(&mut fresh, &mut fresh_harness, &silence);
+        assert_eq!(used_harness.output(0), fresh_harness.output(0));
+        assert_eq!(used_harness.output(1), fresh_harness.output(1));
     }
 
-    #[cfg(feature = "rt-paranoid")]
+    #[test]
+    fn activation_publishes_the_rate_for_the_probe() {
+        let mut plugin = Kirya::default();
+        plugin.configure(96_000.0);
+        let bits = plugin.params.sample_rate_bits.load(Ordering::Relaxed);
+        assert_eq!(f64::from_bits(bits), 96_000.0);
+    }
+
+    #[cfg(feature = "rt-audit")]
     #[test]
     fn process_allocates_nothing_even_while_size_and_freeze_move() {
         // Eight delay lines plus a Size control is the likeliest place for an
@@ -540,39 +614,19 @@ mod tests {
         const BLOCK_SIZE: usize = 256;
         const BLOCKS: usize = 400;
 
-        let params = KiryaParams::default();
-        let mut state = KiryaState::default();
-        Kirya::reset(
-            &mut state,
-            &params,
-            &AudioConfig::new(SAMPLE_RATE, BLOCK_SIZE),
-        );
-
+        let mut plugin = configured();
+        let mut harness = Harness::new(2, BLOCK_SIZE);
         let input = [0.25_f32; BLOCK_SIZE];
-        let mut left = [0.0_f32; BLOCK_SIZE];
-        let mut right = [0.0_f32; BLOCK_SIZE];
+        run(&mut plugin, &mut harness, &input);
 
-        let (_, allocations) = truce::rt::audit(|| {
-            let _section = truce::rt::RtSection::enter();
+        let (_, allocations) = musictools_core::rt_audit::audit(|| {
             for block in 0..BLOCKS {
                 #[allow(clippy::cast_precision_loss)]
                 let sweep = block as f32 / BLOCKS as f32;
-                params
-                    .size
-                    .set_value(f64::from(0.05 + sweep * (4.0 - 0.05)));
-                params.pre_delay.set_value(f64::from(sweep * 500.0));
-                params.freeze.set_value(block % 32 >= 16);
-
-                let inputs: [&[f32]; 2] = [&input, &input];
-                let mut outputs: [&mut [f32]; 2] = [&mut left, &mut right];
-                let mut buffer =
-                    AudioBuffer::from_slices_checked(&inputs, &mut outputs, BLOCK_SIZE);
-                let events = EventList::default();
-                let mut output_events = EventList::default();
-                let transport = TransportInfo::default();
-                let mut context =
-                    ProcessContext::new(&transport, SAMPLE_RATE, BLOCK_SIZE, &mut output_events);
-                let _ = Kirya::process(&mut state, &params, &mut buffer, &events, &mut context);
+                automate(&plugin.params.size, 0.05 + sweep * (4.0 - 0.05), RATE);
+                automate(&plugin.params.pre_delay, sweep * 500.0, RATE);
+                automate(&plugin.params.freeze, block % 32 >= 16, RATE);
+                let _ = run(&mut plugin, &mut harness, &input);
             }
         });
 

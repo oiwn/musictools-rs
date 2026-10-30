@@ -6,8 +6,8 @@
 //! ```
 //!
 //! With no scene, or `all`, every scene renders. Each scene writes
-//! `<out>/<scene>.png` (default `target/snapshots/`); `knobs`, `buttons`, and
-//! `tabs` also write `<scene>-states.png`, a strip of the widget in its
+//! `<out>/<scene>.png` (default `target/snapshots/`); `knobs`, `buttons`,
+//! `tabs`, and `sliders` also write `<scene>-states.png`, a strip of the widget in its
 //! default, hover, pressed, active, and disabled states. Scenes draw the same
 //! sections as the `showcase` window (`common/sections.rs`).
 //!
@@ -24,7 +24,7 @@ use std::process::ExitCode;
 use eframe::egui::{self, Align2, FontId, Pos2, Rect, Vec2};
 use egui_kittest::Harness;
 use image::RgbaImage;
-use neon_ui::{button, header as chrome, knob, palette, tabs, value_entry};
+use neon_ui::{button, header as chrome, knob, palette, slider, tabs, value_entry};
 use sections::{State, section_title};
 
 /// Default device-pixel scale: retina-like, so thin strokes stay readable.
@@ -191,7 +191,10 @@ fn harness<'a>(
         // States come from injected pointer events; the drawn cursor would
         // only cover the widget under review.
         .with_render_cursor(false)
-        .with_context_setup(|ctx| ctx.set_visuals(neon_ui::visuals::dark_neon_visuals()))
+        .with_context_setup(|ctx| {
+            ctx.set_visuals(neon_ui::visuals::dark_neon_visuals());
+            neon_ui::fonts::install(ctx);
+        })
         .build_ui_state(app, Probe::default())
 }
 
@@ -284,6 +287,7 @@ fn state_strip(scene: &str, scale: f32) -> Option<Result<RgbaImage, String>> {
         "knobs" => (Vec2::new(110.0, 130.0), knob_cell),
         "buttons" => (Vec2::new(110.0, 70.0), button_cell),
         "tabs" => (Vec2::new(200.0, 140.0), tabs_cell),
+        "sliders" => (Vec2::new(170.0, 60.0), slider_cell),
         _ => return None,
     };
     Some(render_strip(cell, draw, scale))
@@ -355,15 +359,10 @@ fn knob_cell(ui: &mut egui::Ui, _look: Look) -> Rect {
     })
 }
 
-/// Push button; the active cell shows a toggle switched on instead.
+/// Push button; the active cell shows it selected.
 fn button_cell(ui: &mut egui::Ui, look: Look) -> Rect {
-    centered(ui, Vec2::new(90.0, 24.0), |ui| {
-        if look == Look::Active {
-            let mut on = true;
-            button::toggle(ui, &mut on, "soft").rect
-        } else {
-            button::button(ui, "bake").rect
-        }
+    centered(ui, Vec2::new(78.0, 28.0), |ui| {
+        button::selectable_button(ui, look == Look::Active, "bake").rect
     })
 }
 
@@ -373,9 +372,24 @@ fn tabs_cell(ui: &mut egui::Ui, _look: Look) -> Rect {
     let height = knob::KnobSize::Medium.footprint().y;
     let size = Vec2::new(tabs::tabs_vertical_width(&labels), height);
     let mut current = 1;
-    centered(ui, size, |ui| {
+    let rect = centered(ui, size, |ui| {
         tabs::tabs_vertical(ui, &mut current, &labels, height).rect
-    })
+    });
+    // Point at the last segment: hovering the selected one shows nothing new.
+    Rect::from_min_max(
+        Pos2::new(rect.left(), rect.bottom() - height / labels.len() as f32),
+        rect.max,
+    )
+}
+
+/// Single slider; the cursor targets its handle.
+fn slider_cell(ui: &mut egui::Ui, _look: Look) -> Rect {
+    let mut value = 0.6;
+    let rect = centered(ui, Vec2::new(140.0, 22.0), |ui| {
+        slider::slider(ui, &mut value, 0.5, 140.0).rect
+    });
+    let x = rect.left() + 7.0 + 0.6 * (rect.width() - 14.0);
+    Rect::from_center_size(Pos2::new(x, rect.center().y), Vec2::splat(14.0))
 }
 
 /// Run `add` in a child ui of `size` centered in the cell above the caption.

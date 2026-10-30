@@ -36,7 +36,20 @@ pub fn glow_rect(painter: &Painter, rect: Rect, radius: f32, color: Color32, lay
 
 /// Glow along a polyline: curve indicators, accent underlines.
 pub fn glow_line(painter: &Painter, points: &[Pos2], color: Color32, layers: usize) {
-    for (width, alpha) in ladder(layers, 1.0, 0.45) {
+    glow_line_with(painter, points, color, layers, 1.0, 0.45);
+}
+
+/// [`glow_line`] scaled for thick strokes: layer widths grow from
+/// `base_width` and alphas fall from `base_alpha`. Paint before the stroke.
+pub fn glow_line_with(
+    painter: &Painter,
+    points: &[Pos2],
+    color: Color32,
+    layers: usize,
+    base_width: f32,
+    base_alpha: f32,
+) {
+    for (width, alpha) in ladder(layers, base_width, base_alpha) {
         painter.add(egui::Shape::line(
             points.to_vec(),
             Stroke::new(width, with_alpha(color, alpha)),

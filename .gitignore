@@ -20,5 +20,5 @@ target/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Local Truce build and signing configuration.
+# Local cargo build and signing configuration.
 .cargo/config.local.toml

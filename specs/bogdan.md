@@ -2,7 +2,7 @@
 
 A clipper for drums and mix buses that keeps a hard outer ceiling while putting the detail a normal clipper would flatten back *inside* the plateau. Also carries an antialiased wavefolder as a second voice.
 
-Crates: `crates/bogdan-dsp` (DSP, MIT) and `plugins/bogdan` (Truce wrapper and egui editor). Formats: CLAP and VST3.
+Crates: `crates/bogdan-dsp` (DSP, MIT) and `plugins/bogdan` (nice-plug wrapper, package `ppc_bogdan`, and nice-plug-egui editor). Formats: CLAP; VST3 exists behind the `vst3` cargo feature, off for now (user, 2026-10-30).
 
 ## How it works
 
@@ -55,6 +55,14 @@ Ids are a permanent contract: a host stores automation against them, so an id mu
 - **5 Shape** — enum Sine / Triangle, default Sine, no smoothing. Read only by the Fold voice; the editor grays it out in Clean/Detail.
 
 The Detail cutoff is displayed through `musictools_core::format_hz`, shared with Kirya, so both plugins print frequencies the same way.
+
+## Editor
+
+Dark Neon, 540×420 (up from the legacy 500×376 to give the scope room), laid out like Kirya's, every block in an exact rect from one vertical budget (asserted in tests):
+
+- **Header strip** — "PPC BOGDAN" tracked, "detail clipper · v…" in Muted, and a "?" icon button (shows "×" while open) that swaps the scope and controls for a scrolling help screen. The help copy is the `HELP` table in `editor.rs`; keep it in step with this spec.
+- **Scope** in an inset well — PROCESSED in Cyan with glow over a dimmer DRIVEN in Orange, Red ceiling guides labelled with the Ceiling in dB, a centre line. Labels sit in gutters: legend chips above, levels on the left. A silent tap shows "waiting for audio" instead of a flat line.
+- **Control band** — MODE vertical tabs, the CLIPPER knobs (Drive, Ceiling, Detail, Amount), SHAPE vertical tabs, each captioned and divided. SHAPE is disabled unless Mode is Fold.
 
 ## Gotchas / knowledge
 

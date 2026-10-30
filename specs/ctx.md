@@ -5,17 +5,16 @@ State: in progress
 ## Plan
 
 - [x] Design system complete 2026-10-29: 0003 theme, 0015 showcase, 0004 controls, 0005 displays.
-- [ ] Migration 0016 (foundation + Bogdan) in approval — awaiting the DAW manual check. Then 0017 Kirya port, 0018 Igorek port + docs sweep.
-- [ ] Kit polish before the editor rebuilds: 0019 snapshot CLI done; next 0020 neon-ui polish against the sketch (draft, awaiting approval).
-- [ ] Then: 0006 + 0007 editor rebuilds on nice-plug + the neon kit; 0008 → 0009 Roman; 0013 any time; 0014 then 0010-0012 grid modules. Order in [`roadmap.md`](roadmap.md).
+- [x] Migration to nice-plug: 0016 foundation + Bogdan, 0017 Kirya done; 0018 truce removal (Igorek wrapper deleted, docs swept) done 2026-10-30.
+- [x] Kit polish and editor rebuilds: 0019, 0020, 0006 Bogdan, 0007 Kirya done 2026-10-30.
+- [ ] Next: 0021 kit chrome (fold the shared editor header/help/captions/legend into neon-ui), 0008 → 0009 Roman, then 0014 grid split into ordered tasks, then 0010-0012 grid modules; 0013 CI any time. Order in [`roadmap.md`](roadmap.md).
 
 ## Context
 
-- Task in approval: [`0016`](tasks/0016-nice-migration-foundation.md) — workspace on nice-plug 0.4 / egui 0.37, alloc-audit, neon-ui bindings, audio-harness, Bogdan ported and bundled.
-- Kirya and Igorek crates are temporarily out of the workspace members until 0017/0018 port them; their sources still reference truce.
+- No task in progress. nice-plug cheat-sheet: [`nice_overview.md`](nice_overview.md).
 - Style guide: [`design.md`](design.md); the living showcase runs on eframe 0.37 (`cargo run -p neon-ui --example showcase`).
-- Igorek closed 2026-10-29 (0001, 0002 archived to CHANGELOG); the release set is Bogdan and Kirya, Roman joins with 0009.
+- The release set is Bogdan and Kirya; Roman joins with 0009.
 
 ## Next
 
-Load `target/bundled/ppc_bogdan.clap` (or the VST3) in a host — it appears as **ppc_bogdan**, a separate plugin from the legacy truce Bogdan, which stays installed and untouched. Confirm params/audio/editor, then accept 0016; 0017 (Kirya port, as `ppc_kirya`) follows immediately.
+The user picks 0021 (kit chrome) or 0008 → 0009 (Roman).

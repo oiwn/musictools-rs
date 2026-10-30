@@ -28,7 +28,7 @@ default = [
 
 [scope]
 # Globs never flagged as out of scope. specs/ is always allowed.
-always_allowed = ["Cargo.lock", "Cargo.toml", "truce.toml"]
+always_allowed = ["Cargo.lock", "Cargo.toml"]
 
 [quality]
 # Threshold violations are warnings; true makes them errors.

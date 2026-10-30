@@ -8,7 +8,25 @@
 //! that view, keeping the contained borrow sound. Every other workspace crate
 //! keeps `unsafe_code = "forbid"`.
 
+use nice_plug::params::InternalParamMut;
 use nice_plug::prelude::*;
+
+/// Move `param` to `plain` the way host automation does: the value changes
+/// and its smoother retargets, gliding there over the param's smoothing time
+/// at `sample_rate` (as the wrappers do on a host parameter change).
+///
+/// Tests use this to change parameters between process calls; nice-plug only
+/// exposes the setter to its own wrappers, behind `unsafe`.
+pub fn automate<T: InternalParamMut>(param: &T, plain: T::Plain, sample_rate: f32) {
+    // SAFETY: the setters are `unsafe` only to keep plugin code from calling
+    // them by accident (nice-plug's docs); setting a value and retargeting its
+    // smoother is exactly the wrapper's host-automation path, and a test owns
+    // the params with no audio thread running concurrently.
+    unsafe {
+        param._internal_set_plain_value(plain);
+        param._internal_update_smoother(sample_rate, false);
+    }
+}
 
 /// Minimal `ProcessContext` for unit tests: an empty transport, no events,
 /// and no-op host callbacks.

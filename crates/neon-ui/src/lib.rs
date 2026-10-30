@@ -12,6 +12,7 @@
 #[cfg(feature = "nice-plug")]
 pub mod bindings;
 pub mod button;
+pub mod fonts;
 pub mod glow;
 pub mod grid;
 pub mod header;
@@ -22,5 +23,6 @@ pub mod select;
 pub mod slider;
 pub mod surface;
 pub mod tabs;
+pub mod text;
 pub mod value_entry;
 pub mod visuals;

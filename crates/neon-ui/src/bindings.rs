@@ -24,7 +24,8 @@ pub fn param_knob_with(
     params: knob::KnobParams<'_>,
 ) -> egui::Response {
     let mut normalized = f64::from(param.modulated_normalized_value());
-    let readout = |normalized: f64| format!("{:.2}", param.preview_plain(normalized as f32));
+    // The param's own formatter plus its unit: "-0.10 dB", "1.00 kHz".
+    let readout = |normalized: f64| param.normalized_value_to_string(normalized as f32, true);
     let mut knob_params = params;
     knob_params.default = f64::from(param.default_normalized_value());
     let response = knob::knob_with(ui, &mut normalized, label, &readout, &knob_params);

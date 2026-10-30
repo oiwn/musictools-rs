@@ -1,6 +1,6 @@
 ---
 id: 0016-nice-migration-foundation
-status: approval
+status: done
 scope: [Cargo.toml, Cargo.lock, .cargo/config.toml, crates/musictools-core/, crates/neon-ui/, plugins/bogdan/, crates/audio-harness/]
 created: 2026-10-29
 source: user request 2026-10-29: migrate to nice-plug (egui 0.37) per roadmap decision; three-task plan approved in session
@@ -29,7 +29,7 @@ source: user request 2026-10-29: migrate to nice-plug (egui 0.37) per roadmap de
 
 ## Manual checks
 
-- [ ] Bogdan loads in a host (DAW or pluginval/clap-validator): params automate, audio processes, editor opens and works.
+- [x] Bogdan loads in a host (DAW or pluginval/clap-validator): params automate, audio processes, editor opens and works. — waived by user: "Waive and close"
 
 ## Context
 
@@ -75,3 +75,5 @@ Workspace on nice-plug 0.4 / egui 0.37 with the alloc-audit module, neon-ui para
 - 2026-10-29 advance in-progress/implement → in-progress/verify
 - 2026-10-29 advance in-progress/verify → in-progress/review
 - 2026-10-29 advance in-progress/review → approval
+- 2026-10-30 approved: Looks great now — Waive and close (user, 2026-10-30)
+- 2026-10-30 advance approval → done

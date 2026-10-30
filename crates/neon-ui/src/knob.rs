@@ -2,7 +2,7 @@
 //! the interactive widget. Framework-free: the widget holds a plain normalized
 //! value and returns the `egui::Response`.
 
-use crate::{glow, palette, surface};
+use crate::{glow, palette, surface, text};
 use egui::{
     Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2,
 };
@@ -54,6 +54,9 @@ pub struct KnobParams<'a> {
     pub snap_points: &'a [f64],
     /// Value restored on double-click.
     pub default: f64,
+    /// Draw the readout on an inset pill (for editable entry) instead of
+    /// plain text.
+    pub pill: bool,
 }
 
 impl Default for KnobParams<'_> {
@@ -63,9 +66,22 @@ impl Default for KnobParams<'_> {
             accent: palette::ACCENT,
             snap_points: &[],
             default: 0.5,
+            pill: false,
         }
     }
 }
+
+/// Interaction state the painter draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct KnobLook {
+    hovered: bool,
+    /// Pointer held on the knob (pressed or dragging).
+    held: bool,
+    enabled: bool,
+}
+
+/// Width of the track and value arcs.
+const ARC_WIDTH: f32 = 4.0;
 
 /// New normalized value after a vertical drag (up increases). Clamps to 0..=1.
 #[must_use]
@@ -104,8 +120,9 @@ pub fn arc_points(center: Pos2, radius: f32, start: f32, end: f32, segments: usi
         .collect()
 }
 
-/// Radial-gradient knob body: a fan mesh from the `Panel` center out to a
-/// `Raised` rim.
+/// Knob body: a fan mesh from a `Panel` center out to a rim lit from the
+/// top-left (lifted `Raised`) and falling into shadow (`Inset`) bottom-right,
+/// which reads as a dome.
 pub fn body_mesh(center: Pos2, radius: f32, segments: usize) -> Shape {
     let mut mesh = egui::Mesh::default();
     mesh.vertices.reserve(segments + 2);
@@ -116,12 +133,16 @@ pub fn body_mesh(center: Pos2, radius: f32, segments: usize) -> Shape {
         uv,
         color: palette::PANEL,
     });
+    let lit = surface::lift(palette::RAISED);
+    let light = Vec2::new(-1.0, -1.0).normalized();
     for step in 0..=segments {
         let angle = std::f32::consts::TAU * step as f32 / segments as f32;
+        let dir = Vec2::new(angle.cos(), angle.sin());
+        let t = (dir.dot(light) + 1.0) / 2.0;
         mesh.vertices.push(egui::epaint::Vertex {
-            pos: center + radius * Vec2::new(angle.cos(), angle.sin()),
+            pos: center + radius * dir,
             uv,
-            color: palette::RAISED,
+            color: palette::INSET.lerp_to_gamma(lit, t),
         });
     }
     for step in 0..segments {
@@ -164,6 +185,11 @@ pub fn knob_with(
         response.mark_changed();
     }
 
+    let look = KnobLook {
+        hovered: response.hovered(),
+        held: response.is_pointer_button_down_on() || response.dragged(),
+        enabled: ui.is_enabled(),
+    };
     paint(
         ui.painter(),
         rect,
@@ -172,7 +198,7 @@ pub fn knob_with(
         fmt,
         params,
         active_snap,
-        response.hovered(),
+        look,
     );
     response
 }
@@ -186,72 +212,125 @@ fn paint(
     fmt: &dyn Fn(f64) -> String,
     params: &KnobParams<'_>,
     active_snap: Option<usize>,
-    hovered: bool,
+    look: KnobLook,
 ) {
     let diameter = params.size.diameter();
     let outer = diameter / 2.0;
     let center = pos2(rect.center().x, rect.top() + outer);
-    let arc_radius = outer - 2.5;
-    let body_radius = 0.62 * outer;
+    let arc_radius = outer - 3.0;
+    let body_radius = 0.66 * outer;
+    // `add_enabled_ui` already fades a disabled knob, so Muted (not Ghost)
+    // keeps it readable instead of dimming twice.
+    let accent = if look.enabled {
+        params.accent
+    } else {
+        palette::TEXT_MUTED
+    };
 
-    if hovered {
-        glow::glow_circle(painter, center, body_radius, params.accent, 2);
+    // Track, then the value arc over its halo; the halo grows with
+    // interaction.
+    let end = value_angle(value);
+    let track = arc_points(center, arc_radius, START_ANGLE, START_ANGLE + SWEEP, 48);
+    painter.add(Shape::line(track, Stroke::new(ARC_WIDTH, palette::STROKE)));
+    let arc = arc_points(center, arc_radius, START_ANGLE, end, 48);
+    if look.enabled {
+        let alpha = if look.held {
+            0.5
+        } else if look.hovered {
+            0.35
+        } else {
+            0.2
+        };
+        glow::glow_line_with(painter, &arc, accent, 2, ARC_WIDTH + 2.0, alpha);
     }
-    painter.add(body_mesh(center, body_radius, 32));
+    painter.add(Shape::line(arc, Stroke::new(ARC_WIDTH, accent)));
+
+    // Body: lit dome, bezel hairline, and a soft shadow just inside it.
+    if look.enabled && (look.hovered || look.held) {
+        glow::glow_circle(painter, center, body_radius, accent, 1);
+    }
+    painter.add(body_mesh(center, body_radius, 40));
     painter.circle_stroke(
         center,
         body_radius,
         Stroke::new(palette::HAIRLINE, palette::STROKE_BRIGHT),
     );
+    painter.circle_stroke(
+        center,
+        body_radius - 1.5,
+        Stroke::new(1.5_f32, Color32::from_black_alpha(60)),
+    );
 
     // Tick ring: one tick per snap point; the active snap lights Yellow.
     for (index, point) in params.snap_points.iter().enumerate() {
         let angle = value_angle(*point);
-        let tick_outer = body_radius - 1.5;
+        let tick_outer = body_radius - 2.0;
         let tick_inner = tick_outer - 3.0;
         let color = if Some(index) == active_snap {
             palette::HIGHLIGHT
         } else {
             palette::STROKE_BRIGHT
         };
-        let from = center + tick_inner * Vec2::new(angle.cos(), angle.sin());
-        let to = center + tick_outer * Vec2::new(angle.cos(), angle.sin());
-        painter.line_segment([from, to], Stroke::new(1.5_f32, color));
+        let dir = Vec2::new(angle.cos(), angle.sin());
+        painter.line_segment(
+            [center + tick_inner * dir, center + tick_outer * dir],
+            Stroke::new(1.5_f32, color),
+        );
     }
 
-    // Track arc, then the value arc in the accent color.
-    let end = value_angle(value);
-    let track = arc_points(center, arc_radius, START_ANGLE, START_ANGLE + SWEEP, 48);
-    painter.add(Shape::line(track, Stroke::new(2.0_f32, palette::STROKE)));
-    let arc = arc_points(center, arc_radius, START_ANGLE, end, 48);
-    painter.add(Shape::line(arc, Stroke::new(2.5_f32, params.accent)));
+    // Pointer: primary at rest, accent while held.
+    let dir = Vec2::new(end.cos(), end.sin());
+    let pointer = if look.enabled && look.held {
+        accent
+    } else if look.enabled {
+        palette::TEXT_PRIMARY
+    } else {
+        palette::TEXT_MUTED
+    };
+    painter.line_segment(
+        [
+            center + 0.3 * body_radius * dir,
+            center + 0.82 * body_radius * dir,
+        ],
+        Stroke::new(2.0_f32, pointer),
+    );
 
-    // Readout: mono text on a small inset pill, then the ALL-CAPS label.
-    let galley = painter.layout(
-        fmt(value),
-        FontId::monospace(10.0),
-        palette::TEXT_PRIMARY,
-        f32::INFINITY,
-    );
-    let pill = Rect::from_center_size(
-        pos2(center.x, rect.top() + diameter + 12.0),
-        galley.size() + Vec2::new(12.0, 5.0),
-    );
-    surface::inset(painter, pill);
-    painter.galley(
-        pos2(
-            pill.center().x - galley.size().x / 2.0,
-            pill.center().y - galley.size().y / 2.0,
-        ),
-        galley,
-        palette::TEXT_PRIMARY,
-    );
-    painter.text(
+    // Readout (plain text, or a pill when editable), then the tracked label.
+    let readout_center = pos2(center.x, rect.top() + diameter + 12.0);
+    if params.pill {
+        let galley = painter.layout(
+            fmt(value),
+            FontId::monospace(10.0),
+            palette::TEXT_PRIMARY,
+            f32::INFINITY,
+        );
+        let pill = Rect::from_center_size(readout_center, galley.size() + Vec2::new(12.0, 5.0));
+        surface::inset(painter, pill);
+        painter.galley(
+            pos2(
+                pill.center().x - galley.size().x / 2.0,
+                pill.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            palette::TEXT_PRIMARY,
+        );
+    } else {
+        painter.text(
+            readout_center,
+            Align2::CENTER_CENTER,
+            fmt(value),
+            FontId::proportional(11.0),
+            palette::TEXT_PRIMARY,
+        );
+    }
+    text::tracked(
+        painter,
         pos2(center.x, rect.top() + diameter + 24.0),
         Align2::CENTER_TOP,
-        label.to_uppercase(),
+        &label.to_uppercase(),
         FontId::proportional(10.0),
         palette::TEXT_SECONDARY,
+        0.8,
     );
 }
 

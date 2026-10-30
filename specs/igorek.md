@@ -2,7 +2,9 @@
 
 A convolver built for drums and percussion. Stage one, **Color**, convolves with a *material* IR (metal, wood, shell — the user's own WAV files) to preserve the object's resonant properties. Stage two, **Room**, convolves with a procedurally generated stochastic room IR. Each stage has a Bitwig-convolver style **selection** (start + length) and **3-point envelope** baked into the IR before the FFT, so shaping costs nothing at runtime.
 
-Crates: `crates/igorek-dsp` (DSP, offline probes, MIT) and `plugins/igorek` (Truce wrapper, background IR-build task, egui editor). Formats: CLAP and VST3.
+Crates: `crates/igorek-dsp` (DSP, offline probes, MIT). Formats: none for now.
+
+**Status (2026-10-30):** the truce-era plugin wrapper (`plugins/igorek`: params, background IR-build task, custom state, egui editor) was deleted with the truce removal (task 0018) instead of being ported; git history keeps it. The DSP crate stays in the workspace and builds and tests on its own. A revival writes a fresh nice-plug wrapper (package `ppc_igorek`) with a neon, Kirya-style editor (user, 2026-10-30). The Parameters, Editor, and wrapper-level Gotchas below describe the truce build and are the spec for that revival. Notes naming truce or baseview-truce are truce-era and need re-checking on nice-plug: drag-and-drop in particular may now be possible.
 
 ## How it works
 

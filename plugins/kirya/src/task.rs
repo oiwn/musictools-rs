@@ -1,39 +1,56 @@
 //! Background impulse-response rendering for the editor's IR probe.
 //!
-//! The editor posts one of these whenever a knob changes, the pool runs it off
-//! both the audio and GUI threads, and the finished render lands in the
-//! `ir_slot` handoff field.
+//! The editor posts one of these after the knobs settle, nice-plug's
+//! background executor runs it off both the audio and GUI threads, and the
+//! finished render lands in the `ir_slot` handoff field.
 
 use std::sync::PoisonError;
 use std::sync::atomic::Ordering;
 
 use kirya_dsp::analysis::{Analyzer, ir_window_seconds, render_impulse_response};
-use truce::prelude::*;
 
 use crate::KiryaParams;
 
 /// A request to re-render the impulse response at `sample_rate`.
 ///
-/// Deliberately tiny and `Copy`: `spawn_coalescing` drops the displaced
-/// request on the caller's thread, so the request must be cheap to drop.
+/// Small and `Copy`, with no heap data, as nice-plug requires of a
+/// `BackgroundTask`. nice-plug queues every task it is given (no coalescing),
+/// so each request carries an id and only the newest one renders.
 #[derive(Clone, Copy, Debug)]
 pub struct RenderIr {
     /// Rate to render at, so the display matches what the host is playing.
     pub sample_rate: f64,
+    /// This request's id; see [`KiryaParams::ir_requested`].
+    pub request: u64,
 }
 
-impl BackgroundTask for RenderIr {
-    type Params = KiryaParams;
+impl RenderIr {
+    /// Make a request newer than every earlier one, superseding them.
+    pub fn new(params: &KiryaParams, sample_rate: f64) -> Self {
+        let request = params.ir_requested.fetch_add(1, Ordering::AcqRel) + 1;
+        Self {
+            sample_rate,
+            request,
+        }
+    }
 
-    /// Two concurrent renders would both be valid but could finish out of
-    /// order, leaving the editor showing an older tail than the knobs. One at
-    /// a time per instance keeps the newest render the last one published.
-    const SERIALIZED: bool = true;
+    /// Whether a newer request has been made since this one.
+    fn superseded(self, params: &KiryaParams) -> bool {
+        params.ir_requested.load(Ordering::Acquire) != self.request
+    }
 
-    fn run(self, params: &Self::Params) {
+    /// Render and publish, unless a newer request makes this one moot.
+    pub fn run(self, params: &KiryaParams) {
+        // A drag that outruns the debounce queues several requests; all but
+        // the newest skip here instead of rendering a stale tail.
+        if self.superseded(params) {
+            return;
+        }
+
         // `target_settings` reads the raw targets rather than the smoothed
-        // values: `read()` advances the smoothers, which belong to the audio
-        // thread. Calling it here would steal samples from `process`.
+        // values: `smoothed.next()` advances the smoothers, which belong to
+        // the audio thread. Calling it here would steal samples from
+        // `process`.
         let settings = params.target_settings();
 
         // Size the window to the tail rather than rendering a fixed length: a
@@ -55,6 +72,11 @@ impl BackgroundTask for RenderIr {
             .ir_slot
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        // Checked again under the lock: a newer request may have started and
+        // finished while this one rendered, and must not be overwritten.
+        if self.superseded(params) {
+            return;
+        }
         *slot = Some(Box::new(render));
         drop(slot);
 
@@ -65,6 +87,13 @@ impl BackgroundTask for RenderIr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use audio_harness::automate;
+
+    const RATE: f32 = 48_000.0;
+
+    fn render(params: &KiryaParams) {
+        RenderIr::new(params, 48_000.0).run(params);
+    }
 
     #[test]
     fn a_render_lands_in_the_slot_and_bumps_the_generation() {
@@ -72,10 +101,7 @@ mod tests {
         assert!(params.ir_slot.lock().unwrap().is_none());
         assert_eq!(params.ir_generation.load(Ordering::Acquire), 0);
 
-        RenderIr {
-            sample_rate: 48_000.0,
-        }
-        .run(&params);
+        render(&params);
 
         assert_eq!(params.ir_generation.load(Ordering::Acquire), 1);
         let slot = params.ir_slot.lock().unwrap();
@@ -89,50 +115,57 @@ mod tests {
     }
 
     #[test]
-    fn rendering_does_not_advance_the_audio_threads_smoothers() {
-        // The task runs on a pool thread while `process` is running. Reading
-        // the smoothed value here instead of the target would consume samples
-        // the audio thread is about to need, audibly slowing every glide.
+    fn a_superseded_request_renders_nothing() {
         let params = KiryaParams::default();
-        params.size.set_value(3.0);
-        let before = params.size.current();
+        let stale = RenderIr::new(&params, 48_000.0);
+        let newest = RenderIr::new(&params, 48_000.0);
 
-        RenderIr {
-            sample_rate: 48_000.0,
-        }
-        .run(&params);
+        stale.run(&params);
+        assert_eq!(params.ir_generation.load(Ordering::Acquire), 0);
+        assert!(params.ir_slot.lock().unwrap().is_none());
 
-        assert_eq!(params.size.current(), before);
+        newest.run(&params);
+        assert_eq!(params.ir_generation.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn rendering_does_not_advance_the_audio_threads_smoothers() {
+        // The task runs on a background thread while `process` is running.
+        // Reading the smoothed value here instead of the target would consume
+        // samples the audio thread is about to need, audibly slowing every
+        // glide.
+        let params = KiryaParams::default();
+        automate(&params.size, 3.0, RATE);
+        let before = params.size.smoothed.previous_value();
+
+        render(&params);
+
+        assert_eq!(params.size.smoothed.previous_value(), before);
+        assert!(params.size.smoothed.is_smoothing());
     }
 
     #[test]
     fn a_second_render_replaces_the_first() {
         let params = KiryaParams::default();
-        let task = RenderIr {
-            sample_rate: 48_000.0,
+        let rt60 = |params: &KiryaParams| {
+            params
+                .ir_slot
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .rt60_seconds
         };
 
-        // Both decays have to fall 35 dB inside the three-second render, or
-        // the measurement reports `None` and there is nothing to compare.
-        params.decay.set_value(0.2);
-        task.run(&params);
-        let short = params
-            .ir_slot
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .rt60_seconds;
+        // Both decays have to fall 35 dB inside the render window, or the
+        // measurement reports `None` and there is nothing to compare.
+        automate(&params.decay, 0.2, RATE);
+        render(&params);
+        let short = rt60(&params);
 
-        params.decay.set_value(0.45);
-        task.run(&params);
-        let long = params
-            .ir_slot
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .rt60_seconds;
+        automate(&params.decay, 0.45, RATE);
+        render(&params);
+        let long = rt60(&params);
 
         assert_eq!(params.ir_generation.load(Ordering::Acquire), 2);
         assert!(short.is_some() && long.is_some(), "{short:?} / {long:?}");
@@ -144,12 +177,9 @@ mod tests {
         // The point of sizing the window: RT60 stays measurable instead of
         // degrading to "> 3 s" the moment the decay gets long.
         let params = KiryaParams::default();
-        for decay in [0.2_f64, 0.4, 0.55, 0.7, 0.8] {
-            params.decay.set_value(decay);
-            RenderIr {
-                sample_rate: 48_000.0,
-            }
-            .run(&params);
+        for decay in [0.2_f32, 0.4, 0.55, 0.7, 0.8] {
+            automate(&params.decay, decay, RATE);
+            render(&params);
 
             let slot = params.ir_slot.lock().unwrap();
             let render = slot.as_ref().unwrap();
@@ -166,13 +196,10 @@ mod tests {
         // A frozen render would never decay and the display would be a flat
         // block, so the probe forces Freeze off.
         let params = KiryaParams::default();
-        params.freeze.set_value(true);
-        params.decay.set_value(0.3);
+        automate(&params.freeze, true, RATE);
+        automate(&params.decay, 0.3, RATE);
 
-        RenderIr {
-            sample_rate: 48_000.0,
-        }
-        .run(&params);
+        render(&params);
 
         let slot = params.ir_slot.lock().unwrap();
         assert!(slot.as_ref().unwrap().rt60_seconds.is_some());

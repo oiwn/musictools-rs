@@ -23,6 +23,9 @@ pub struct State {
     range_high: f64,
     soft: bool,
     link: bool,
+    selected: bool,
+    switch_on: bool,
+    switch_off: bool,
     entry: f64,
     mode: usize,
     tab: usize,
@@ -45,6 +48,9 @@ impl State {
             range_high: 0.7,
             soft: true,
             link: false,
+            selected: true,
+            switch_on: true,
+            switch_off: false,
             entry: 0.42,
             mode: 0,
             tab: 0,
@@ -306,12 +312,17 @@ pub fn sliders(ui: &mut egui::Ui, s: &mut State) {
     });
 }
 
-/// Push button, toggles, and icon buttons.
+/// Push button, selectable button, LED toggles, switch, and icon buttons.
 pub fn buttons(ui: &mut egui::Ui, s: &mut State) {
     ui.horizontal(|ui| {
         let _ = button::button(ui, "bake");
+        if button::selectable_button(ui, s.selected, "active").clicked() {
+            s.selected = !s.selected;
+        }
         let _ = button::toggle(ui, &mut s.soft, "soft");
         let _ = button::toggle(ui, &mut s.link, "link");
+        let _ = button::switch(ui, &mut s.switch_on);
+        let _ = button::switch(ui, &mut s.switch_off);
         let _ = button::icon_button(ui, "×");
         let _ = button::icon_button(ui, "●");
     });
@@ -401,13 +412,23 @@ pub fn graphs(ui: &mut egui::Ui) {
 /// A static composition of the kit per the layout canon — the shape of the
 /// Bogdan editor rebuild (0006).
 pub fn bogdan_preview(ui: &mut egui::Ui, s: &mut State) {
-    let (panel_rect, _) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 216.0), Sense::hover());
+    // Vertical budget: header, gap, scope well, gap, knob row, bottom pad.
+    // The knob row takes the full knob footprint so labels never touch the
+    // panel edge and arcs keep clear of the well.
+    const HEADER: f32 = 38.0;
+    const WELL: f32 = 84.0;
+    const GAP: f32 = 12.0;
+    let knob_row = knob::KnobSize::Medium.footprint().y;
+    let panel_height = HEADER + GAP + WELL + GAP + knob_row + GAP;
+    let (panel_rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), panel_height),
+        Sense::hover(),
+    );
     surface::panel(ui.painter(), panel_rect);
 
     // Kit header bar (0005 chrome); the kebab's second entry is bypass.
     let header_rect =
-        egui::Rect::from_min_size(panel_rect.left_top(), Vec2::new(panel_rect.width(), 38.0));
+        egui::Rect::from_min_size(panel_rect.left_top(), Vec2::new(panel_rect.width(), HEADER));
     ui.scope_builder(egui::UiBuilder::new().max_rect(header_rect), |ui| {
         let id = ui.make_persistent_id("bogdan-header");
         let bar = chrome::header_bar(
@@ -425,8 +446,11 @@ pub fn bogdan_preview(ui: &mut egui::Ui, s: &mut State) {
 
     // The scope well: an inset placeholder until graphs land (0006).
     let well = egui::Rect::from_min_max(
-        egui::pos2(panel_rect.left() + 12.0, panel_rect.top() + 44.0),
-        egui::pos2(panel_rect.right() - 12.0, panel_rect.top() + 128.0),
+        egui::pos2(panel_rect.left() + GAP, panel_rect.top() + HEADER + GAP),
+        egui::pos2(
+            panel_rect.right() - GAP,
+            panel_rect.top() + HEADER + GAP + WELL,
+        ),
     );
     surface::inset(ui.painter(), well);
     caption(
@@ -443,8 +467,8 @@ pub fn bogdan_preview(ui: &mut egui::Ui, s: &mut State) {
 
     // Knob row per the layout canon: M knobs, one accent each.
     let knobs_rect = egui::Rect::from_min_size(
-        egui::pos2(panel_rect.left() + 12.0, panel_rect.bottom() - 82.0),
-        Vec2::new(panel_rect.width() - 24.0, 82.0),
+        egui::pos2(panel_rect.left() + GAP, well.bottom() + GAP),
+        Vec2::new(panel_rect.width() - 2.0 * GAP, knob_row),
     );
     ui.scope_builder(egui::UiBuilder::new().max_rect(knobs_rect), |ui| {
         ui.horizontal(|ui| {

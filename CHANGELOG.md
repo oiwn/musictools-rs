@@ -11,6 +11,36 @@ task. Coexists with any conventional release notes already here.
 - files touched / decisions locked
 -->
 
+## 2026-10-30 — igorek nice port docs
+
+- Truce removed: the Igorek wrapper deleted (DSP kept), a nice-plug cheat-sheet replaces the truce one, and README, specs and drafts re-pointed at nice-plug.
+- Task `0018-igorek-nice-port-docs`; source: user request 2026-10-29: igorek port plus tooling/docs sweep
+
+## 2026-10-30 — kirya neon editor
+
+- Kirya's editor rebuilt on the neon kit: one combined IR graph with a dim spectrogram behind glowing envelopes, and PLATE/TONE/MOD knob tabs flanked by Dry/Wet and Freeze.
+- Task `0007-kirya-neon-editor`; source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
+
+## 2026-10-30 — bogdan neon editor
+
+- Bogdan's editor rebuilt on the neon kit to match Kirya: header with help, one scope graph with label gutters, and a MODE / knobs / SHAPE control band.
+- Task `0006-bogdan-neon-editor`; source: user request 2026-10-29: implement Dark Neon design from sketch (specs/design.md)
+
+## 2026-10-30 — neon ui polish
+
+- neon-ui foundation and controls polished to the Dark Neon sketch: lit surfaces, Inter font, knob v2, button/tab/slider state ladders, unit readouts.
+- Task `0020-neon-ui-polish`; source: user request 2026-10-30: in-host Bogdan shot looks unpolished vs design sketch; plan UI component polish with a screenshot CLI
+
+## 2026-10-30 — nice migration foundation
+
+- Workspace on nice-plug 0.4 / egui 0.37 with the alloc-audit module, neon-ui param bindings, and Bogdan ported end-to-end including bundles.
+- Task `0016-nice-migration-foundation`; source: user request 2026-10-29: migrate to nice-plug (egui 0.37) per roadmap decision; three-task plan approved in session
+
+## 2026-10-30 — kirya nice port
+
+- Kirya ported to nice-plug as `ppc_kirya`: exact log-taper knobs, the IR render on the background executor behind a stale-request guard, and the legacy-look editor on NiceEguiApp.
+- Task `0017-kirya-nice-port`; source: user request 2026-10-29: kirya port to nice-plug after migration foundation
+
 ## 2026-10-30 — neon ui snapshot cli
 
 - Headless PNG snapshots of neon-ui scenes via `cargo run -p neon-ui --example snapshot`.

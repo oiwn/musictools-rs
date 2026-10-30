@@ -1,14 +1,16 @@
-//! NeonSlider — inset track, accent fill up to the handle, raised handle;
-//! plus a double-thumb range variant. Framework-free like the rest of the kit.
+//! NeonSlider — thin inset track, a blue-to-cyan glowing fill, and a round
+//! handle with a bright rim; plus a double-thumb range variant whose fill
+//! spans the thumbs. Framework-free like the rest of the kit.
 
-use crate::{glow, palette, surface};
-use egui::{Painter, Pos2, Rect, Response, Sense, Ui, Vec2};
+use crate::{glow, palette};
+use egui::epaint::{Vertex, WHITE_UV};
+use egui::{Color32, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 
-const TRACK_HEIGHT: f32 = 6.0;
-const HANDLE_WIDTH: f32 = 10.0;
-const HANDLE_HEIGHT: f32 = 16.0;
+const TRACK_HEIGHT: f32 = 4.0;
+const HANDLE_RADIUS: f32 = 7.0;
+/// Horizontal room the handle needs at either end of its travel.
+const HANDLE_WIDTH: f32 = 2.0 * HANDLE_RADIUS;
 const ROW_HEIGHT: f32 = 22.0;
-const FILL_INSET: f32 = 2.0;
 
 /// Map a pointer x within the handle travel span to a normalized value.
 #[must_use]
@@ -44,7 +46,8 @@ pub fn slider(ui: &mut Ui, value: &mut f64, default: f64, width: f32) -> Respons
             response.mark_changed();
         }
     }
-    paint_single(ui.painter(), rect, *value, response.hovered());
+    let look = Look::of(ui, &response);
+    paint_single(ui.painter(), rect, *value, look);
     response
 }
 
@@ -80,7 +83,8 @@ pub fn range_slider(ui: &mut Ui, low: &mut f64, high: &mut f64, width: f32) -> R
         }
     }
 
-    paint_range(ui.painter(), rect, *low, *high, response.hovered());
+    let look = Look::of(ui, &response);
+    paint_range(ui.painter(), rect, *low, *high, look);
     response
 }
 
@@ -98,45 +102,117 @@ fn value_x(value: f64, rect: Rect) -> f32 {
     left + value as f32 * (right - left)
 }
 
-fn track_rect(rect: Rect) -> Rect {
-    let mid_y = rect.center().y;
-    Rect::from_min_max(
-        Pos2::new(rect.left(), mid_y - TRACK_HEIGHT / 2.0),
-        Pos2::new(rect.right(), mid_y + TRACK_HEIGHT / 2.0),
-    )
+/// Interaction state the painter draws.
+#[derive(Clone, Copy)]
+struct Look {
+    hovered: bool,
+    held: bool,
+    enabled: bool,
 }
 
-fn paint_track_and_fill(painter: &Painter, rect: Rect, fill_to: f32) {
-    let track = track_rect(rect);
-    surface::inset(painter, track);
-    let mid_y = rect.center().y;
-    let fill = Rect::from_min_max(
-        Pos2::new(
-            track.left() + FILL_INSET,
-            mid_y - (TRACK_HEIGHT - FILL_INSET) / 2.0,
-        ),
-        Pos2::new(fill_to, mid_y + (TRACK_HEIGHT - FILL_INSET) / 2.0),
-    );
-    painter.rect_filled(fill, palette::RADIUS_SMALL, palette::ACCENT);
-}
-
-fn paint_handle(painter: &Painter, x: f32, mid_y: f32, hovered: bool) {
-    let rect = Rect::from_center_size(Pos2::new(x, mid_y), Vec2::new(HANDLE_WIDTH, HANDLE_HEIGHT));
-    if hovered {
-        glow::glow_rect(painter, rect, palette::RADIUS_SMALL, palette::ACCENT, 2);
+impl Look {
+    fn of(ui: &Ui, response: &Response) -> Self {
+        Self {
+            hovered: response.hovered(),
+            held: response.is_pointer_button_down_on() || response.dragged(),
+            enabled: ui.is_enabled(),
+        }
     }
-    surface::raised(painter, rect);
 }
 
-fn paint_single(painter: &Painter, rect: Rect, value: f64, hovered: bool) {
-    paint_track_and_fill(painter, rect, value_x(value, rect));
-    paint_handle(painter, value_x(value, rect), rect.center().y, hovered);
+fn track_rect(rect: Rect) -> Rect {
+    Rect::from_center_size(rect.center(), Vec2::new(rect.width(), TRACK_HEIGHT))
 }
 
-fn paint_range(painter: &Painter, rect: Rect, low: f64, high: f64, hovered: bool) {
-    paint_track_and_fill(painter, rect, value_x(high, rect));
-    paint_handle(painter, value_x(low, rect), rect.center().y, hovered);
-    paint_handle(painter, value_x(high, rect), rect.center().y, hovered);
+/// Track, then the glowing fill from `from_x` to `to_x`.
+fn paint_track_and_fill(painter: &Painter, rect: Rect, from_x: f32, to_x: f32, look: Look) {
+    let track = track_rect(rect);
+    let radius = TRACK_HEIGHT / 2.0;
+    painter.rect_filled(track, radius, palette::INSET);
+    painter.rect_stroke(
+        track,
+        radius,
+        Stroke::new(palette::HAIRLINE, palette::STROKE),
+        egui::StrokeKind::Outside,
+    );
+    if to_x <= from_x {
+        return;
+    }
+    let fill = Rect::from_min_max(
+        Pos2::new(from_x, track.top()),
+        Pos2::new(to_x, track.bottom()),
+    );
+    if !look.enabled {
+        painter.rect_filled(fill, radius, palette::TEXT_MUTED);
+        return;
+    }
+    let mid = [
+        Pos2::new(from_x, track.center().y),
+        Pos2::new(to_x, track.center().y),
+    ];
+    glow::glow_line_with(painter, &mid, palette::ACCENT, 2, TRACK_HEIGHT + 2.0, 0.25);
+    painter.add(horizontal_gradient(fill, palette::BLUE, palette::CYAN));
+}
+
+/// A quad shading from `left` to `right` across `rect`.
+fn horizontal_gradient(rect: Rect, left: Color32, right: Color32) -> Shape {
+    let mut mesh = Mesh::default();
+    for (pos, color) in [
+        (rect.left_top(), left),
+        (rect.right_top(), right),
+        (rect.right_bottom(), right),
+        (rect.left_bottom(), left),
+    ] {
+        mesh.vertices.push(Vertex {
+            pos,
+            uv: WHITE_UV,
+            color,
+        });
+    }
+    mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+    Shape::mesh(mesh)
+}
+
+/// Round handle: Surface center, bright rim, accent glow that grows with
+/// interaction.
+fn paint_handle(painter: &Painter, x: f32, mid_y: f32, look: Look) {
+    let center = Pos2::new(x, mid_y);
+    if !look.enabled {
+        painter.circle_filled(center, HANDLE_RADIUS, palette::SURFACE);
+        painter.circle_stroke(
+            center,
+            HANDLE_RADIUS - 1.0,
+            Stroke::new(2.0_f32, palette::TEXT_MUTED),
+        );
+        return;
+    }
+    let layers = if look.held {
+        3
+    } else if look.hovered {
+        2
+    } else {
+        1
+    };
+    glow::glow_circle(painter, center, HANDLE_RADIUS, palette::ACCENT, layers);
+    painter.circle_filled(center, HANDLE_RADIUS, palette::SURFACE);
+    painter.circle_stroke(
+        center,
+        HANDLE_RADIUS - 1.0,
+        Stroke::new(2.0_f32, palette::CYAN.lerp_to_gamma(Color32::WHITE, 0.55)),
+    );
+}
+
+fn paint_single(painter: &Painter, rect: Rect, value: f64, look: Look) {
+    let x = value_x(value, rect);
+    paint_track_and_fill(painter, rect, rect.left(), x, look);
+    paint_handle(painter, x, rect.center().y, look);
+}
+
+fn paint_range(painter: &Painter, rect: Rect, low: f64, high: f64, look: Look) {
+    let (low_x, high_x) = (value_x(low, rect), value_x(high, rect));
+    paint_track_and_fill(painter, rect, low_x, high_x, look);
+    paint_handle(painter, low_x, rect.center().y, look);
+    paint_handle(painter, high_x, rect.center().y, look);
 }
 
 #[cfg(test)]

@@ -1,12 +1,14 @@
-//! NeonTabs — a segmented control: the active segment sits on Surface with an
-//! accent underline glow. `tabs` lays the segments out horizontally;
-//! `tabs_vertical` stacks them, for controls sitting beside tall columns.
+//! NeonTabs — a segmented control on a Surface strip with hairline dividers.
+//! The active segment takes a deep-blue gradient and a glowing accent bar
+//! (below for `tabs`, leading for `tabs_vertical`); other segments light on
+//! hover and sink on press. Disabled strips stay readable: the active segment
+//! turns grey instead of vanishing.
 
-use crate::{glow, palette, surface};
-use egui::{Align2, FontId, Painter, Pos2, Rect, Response, Sense, Ui, Vec2};
+use crate::{glow, palette, surface, text};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
-const HEIGHT: f32 = 22.0;
-const UNDERLINE: f32 = 2.0;
+const HEIGHT: f32 = 26.0;
+const BAR: f32 = 2.0;
 
 /// Segment index for an x position inside a `segments`-wide `rect`.
 #[must_use]
@@ -32,7 +34,8 @@ pub fn segment_at_y(y: f32, extent: f32, segments: usize) -> usize {
 /// uses, so editors can precompute row centering.
 #[must_use]
 pub fn tabs_width(labels: &[&str]) -> f32 {
-    (labels.iter().map(|l| l.len() as f32).sum::<f32>() * 6.5 + 40.0).max(120.0)
+    (labels.iter().map(|l| l.len() as f32).sum::<f32>() * 7.5 + 22.0 * labels.len() as f32)
+        .max(120.0)
 }
 
 /// Width a `tabs_vertical` control occupies for `labels`: the longest label
@@ -46,113 +49,182 @@ pub fn tabs_vertical_width(labels: &[&str]) -> f32 {
     (longest * 6.5 + 16.0).max(64.0)
 }
 
-/// Segmented tabs over `labels`; `current` is the selected index.
+/// Horizontal tabs; `current` is the selected index.
 pub fn tabs(ui: &mut Ui, current: &mut usize, labels: &[&str]) -> Response {
     let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(tabs_width(labels), HEIGHT), Sense::click());
-
-    if response.clicked()
-        && let Some(pos) = response.interact_pointer_pos()
-    {
-        let next = segment_at(pos.x, rect, labels.len()).min(labels.len() - 1);
-        if next != *current {
-            *current = next;
-            response.mark_changed();
-        }
-    }
-
-    paint(ui.painter(), rect, *current, labels, ui.is_enabled());
+    let pick = |pos: Pos2| segment_at(pos.x, rect, labels.len()).min(labels.len() - 1);
+    select_on_click(&mut response, current, pick);
+    let input = SegmentInput::read(ui, &response, pick);
+    paint(
+        ui.painter(),
+        rect,
+        *current,
+        labels,
+        input,
+        Axis::Horizontal,
+    );
     response
 }
 
-/// Stacked segmented tabs filling `height` — the vertical companion to
-/// [`tabs`], sized to stand beside a full knob column.
+/// Vertically stacked tabs filling `height`; `current` is the selected index.
 pub fn tabs_vertical(ui: &mut Ui, current: &mut usize, labels: &[&str], height: f32) -> Response {
     let (rect, mut response) = ui.allocate_exact_size(
         Vec2::new(tabs_vertical_width(labels), height),
         Sense::click(),
     );
+    let pick = |pos: Pos2| {
+        segment_at_y(pos.y - rect.top(), rect.height(), labels.len()).min(labels.len() - 1)
+    };
+    select_on_click(&mut response, current, pick);
+    let input = SegmentInput::read(ui, &response, pick);
+    paint(ui.painter(), rect, *current, labels, input, Axis::Vertical);
+    response
+}
 
+fn select_on_click(response: &mut Response, current: &mut usize, pick: impl Fn(Pos2) -> usize) {
     if response.clicked()
         && let Some(pos) = response.interact_pointer_pos()
     {
-        let next =
-            segment_at_y(pos.y - rect.top(), rect.height(), labels.len()).min(labels.len() - 1);
+        let next = pick(pos);
         if next != *current {
             *current = next;
             response.mark_changed();
         }
     }
-
-    paint_vertical(ui.painter(), rect, *current, labels, ui.is_enabled());
-    response
 }
 
-fn paint(painter: &Painter, rect: Rect, current: usize, labels: &[&str], enabled: bool) {
-    let seg_width = rect.width() / labels.len() as f32;
-    for (index, label) in labels.iter().enumerate() {
-        let seg = Rect::from_min_size(
-            Pos2::new(rect.left() + index as f32 * seg_width, rect.top()),
-            Vec2::new(seg_width, rect.height()),
-        );
-        paint_segment(painter, seg, index, current, label, Bar::Below, enabled);
-    }
-}
-
-/// Where a segment's accent bar sits.
-enum Bar {
-    Below,
-    Leading,
-}
-
-fn paint_segment(
-    painter: &Painter,
-    seg: Rect,
-    index: usize,
-    current: usize,
-    label: &str,
-    bar: Bar,
+/// Which segment the pointer is over, and whether it is held there.
+#[derive(Clone, Copy)]
+struct SegmentInput {
+    hovered: Option<usize>,
+    pressed: bool,
     enabled: bool,
-) {
-    // A disabled stack still shows its stored selection, but ghosted: no
-    // Surface fill, no accent bar, no highlight text.
-    let active = index == current && enabled;
-    if active {
-        surface::surface(painter, seg);
-        let bar_rect = match bar {
-            Bar::Below => Rect::from_min_size(
-                Pos2::new(seg.left(), seg.bottom() - UNDERLINE),
-                Vec2::new(seg.width(), UNDERLINE),
-            ),
-            Bar::Leading => Rect::from_min_size(seg.left_top(), Vec2::new(UNDERLINE, seg.height())),
-        };
-        glow::glow_rect(painter, bar_rect, 0.0, palette::ACCENT, 2);
-        painter.rect_filled(bar_rect, 0.0, palette::ACCENT);
+}
+
+impl SegmentInput {
+    fn read(ui: &Ui, response: &Response, pick: impl Fn(Pos2) -> usize) -> Self {
+        let enabled = ui.is_enabled();
+        Self {
+            hovered: response.hover_pos().filter(|_| enabled).map(pick),
+            pressed: enabled && response.is_pointer_button_down_on(),
+            enabled,
+        }
     }
-    painter.text(
-        seg.center(),
-        Align2::CENTER_CENTER,
-        label.to_uppercase(),
-        FontId::proportional(10.0),
-        if !enabled {
-            palette::TEXT_GHOST
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Axis {
+    Horizontal,
+    Vertical,
+}
+
+fn paint(
+    painter: &Painter,
+    rect: Rect,
+    current: usize,
+    labels: &[&str],
+    input: SegmentInput,
+    axis: Axis,
+) {
+    if labels.is_empty() {
+        return;
+    }
+    surface::surface(painter, rect);
+    let count = labels.len() as f32;
+    let segment = |index: usize| match axis {
+        Axis::Horizontal => {
+            let width = rect.width() / count;
+            Rect::from_min_size(
+                Pos2::new(rect.left() + index as f32 * width, rect.top()),
+                Vec2::new(width, rect.height()),
+            )
+        }
+        Axis::Vertical => {
+            let height = rect.height() / count;
+            Rect::from_min_size(
+                Pos2::new(rect.left(), rect.top() + index as f32 * height),
+                Vec2::new(rect.width(), height),
+            )
+        }
+    };
+
+    // Dividers between segments, skipped next to the active one.
+    for index in 1..labels.len() {
+        if index == current || index == current + 1 {
+            continue;
+        }
+        let seg = segment(index);
+        let (from, to) = match axis {
+            Axis::Horizontal => (
+                Pos2::new(seg.left(), seg.top() + 5.0),
+                Pos2::new(seg.left(), seg.bottom() - 5.0),
+            ),
+            Axis::Vertical => (
+                Pos2::new(seg.left() + 8.0, seg.top()),
+                Pos2::new(seg.right() - 8.0, seg.top()),
+            ),
+        };
+        painter.line_segment([from, to], Stroke::new(palette::HAIRLINE, palette::STROKE));
+    }
+
+    for (index, label) in labels.iter().enumerate() {
+        let seg = segment(index).shrink(1.0);
+        let active = index == current;
+        let hovered = input.hovered == Some(index);
+        if active && input.enabled {
+            paint_active(painter, seg, axis);
         } else if active {
+            // Disabled: keep the selection visible, without the accent.
+            painter.rect_filled(seg, palette::RADIUS_SMALL, palette::RAISED);
+        } else if hovered && input.pressed {
+            surface::inset(painter, seg);
+        } else if hovered {
+            surface::raised_lit(painter, seg);
+        }
+
+        // `add_enabled_ui` already fades disabled strips; Secondary keeps
+        // their labels readable after that fade.
+        let color = if active || hovered {
             palette::TEXT_PRIMARY
         } else {
-            palette::TEXT_MUTED
-        },
-    );
+            palette::TEXT_SECONDARY
+        };
+        text::tracked(
+            painter,
+            seg.center(),
+            Align2::CENTER_CENTER,
+            &label.to_uppercase(),
+            FontId::proportional(10.5),
+            color,
+            0.6,
+        );
+    }
 }
 
-fn paint_vertical(painter: &Painter, rect: Rect, current: usize, labels: &[&str], enabled: bool) {
-    let seg_height = rect.height() / labels.len() as f32;
-    for (index, label) in labels.iter().enumerate() {
-        let seg = Rect::from_min_size(
-            Pos2::new(rect.left(), rect.top() + index as f32 * seg_height),
-            Vec2::new(rect.width(), seg_height),
-        );
-        paint_segment(painter, seg, index, current, label, Bar::Leading, enabled);
-    }
+/// Active segment: deep-blue gradient plus the glowing accent bar.
+fn paint_active(painter: &Painter, seg: Rect, axis: Axis) {
+    surface::gradient_rect(
+        painter,
+        seg,
+        palette::RADIUS_SMALL,
+        deep_blue(0.7),
+        deep_blue(0.84),
+    );
+    let bar = match axis {
+        Axis::Horizontal => Rect::from_min_size(
+            Pos2::new(seg.left(), seg.bottom() - BAR),
+            Vec2::new(seg.width(), BAR),
+        ),
+        Axis::Vertical => Rect::from_min_size(seg.left_top(), Vec2::new(BAR, seg.height())),
+    };
+    glow::glow_rect(painter, bar, 0.0, palette::ACCENT, 2);
+    painter.rect_filled(bar, 0.0, palette::ACCENT);
+}
+
+/// Blue sunk toward Inset by `depth` (0 = Blue, 1 = Inset).
+fn deep_blue(depth: f32) -> Color32 {
+    palette::BLUE.lerp_to_gamma(palette::INSET, depth)
 }
 
 #[cfg(test)]
