@@ -11,6 +11,26 @@ task. Coexists with any conventional release notes already here.
 - files touched / decisions locked
 -->
 
+## 2026-11-01 — box app
+
+- box app: a standalone eframe + cpal app that shows a patch on the cell grid with live module tiles and plays it.
+- Task `0027-box-app`; source: user request 2026-10-31: box standalone app first, one tile UI per module on a fixed cell grid, basic modules (sine, gates, env, output)
+
+## 2026-11-01 — box module library
+
+- box basic modules: Sine, Gates, Env and Output, each one file with DSP and a fixed-size tile view, registered in `MODULES`.
+- Task `0024-box-module-library`; source: user request 2026-10-31: box standalone app first, one tile UI per module on a fixed cell grid, basic modules (sine, gates, env, output)
+
+## 2026-11-01 — box engine
+
+- box engine: patch model, acyclic graph compiler with buffer reuse, and an allocation-free executor with lock-free plan swaps.
+- Task `0023-box-engine`; source: user request 2026-10-31: box standalone app first, one tile UI per module on a fixed cell grid, basic modules (sine, gates, env, output)
+
+## 2026-11-01 — grid foundation
+
+- box foundation: `specs/box.md` and `box-core`, the standard module interface (descriptor with cell size and ports, param specs, `Module` trait, lock-free param store) every box module implements.
+- Task `0014-grid-foundation`; source: user request 2026-10-31: box standalone app first, one tile UI per module on a fixed cell grid, basic modules (sine, gates, env, output)
+
 ## 2026-10-30 — igorek nice port docs
 
 - Truce removed: the Igorek wrapper deleted (DSP kept), a nice-plug cheat-sheet replaces the truce one, and README, specs and drafts re-pointed at nice-plug.

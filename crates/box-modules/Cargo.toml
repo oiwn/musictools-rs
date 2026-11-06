@@ -1,0 +1,24 @@
+[package]
+name = "box-modules"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "box modules: one folder each with descriptor, DSP and tile view"
+
+[features]
+rt-audit = ["musictools-core/alloc-audit", "box-dsp/rt-audit"]
+
+[dependencies]
+box-core = { workspace = true }
+musictools-core = { workspace = true }
+roman-dsp = { workspace = true }
+egui = { workspace = true }
+neon-ui = { workspace = true }
+
+[dev-dependencies]
+box-dsp = { workspace = true }
+
+[lints]
+workspace = true

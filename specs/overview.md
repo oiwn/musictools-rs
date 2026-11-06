@@ -6,6 +6,7 @@ Workspace architecture and the rules that apply across every plugin. Each plugin
 - [`kirya.md`](kirya.md) — Dattorro plate reverb with a live IR probe.
 - [`igorek.md`](igorek.md) — two-stage convolver for percussion (DSP crate only; the wrapper was removed).
 - [`design.md`](design.md) — Dark Neon UI style guide behind the shared neon-ui kit.
+- [`box.md`](box.md) — the box modular grid: cell grid, module interface, engine rules, adding a module.
 - [`nice_overview.md`](nice_overview.md) — nice-plug 0.4 cheat-sheet: params, process, background tasks, state, editors, tests, bundling.
 
 Plugin naming (decided 2026-10-29): the nice-plug generation ships as separate, coexisting plugins — `ppc_bogdan`, `ppc_kirya`, and `ppc_roman` when it lands — in display name, package name, bundle file name, and identity (`com.oiwn.ppc_*` CLAP ids, fresh VST3 class ids). The legacy truce-built plugins keep their names and ids untouched so existing projects and installs are unaffected.

@@ -1,0 +1,25 @@
+[package]
+name = "box-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "box standalone app: the cell-grid canvas over a cpal audio stream"
+
+[dependencies]
+box-core = { workspace = true }
+box-dsp = { workspace = true }
+box-modules = { workspace = true }
+neon-ui = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true }
+cpal = { workspace = true }
+
+[dev-dependencies]
+# Offscreen render of the canvas: `cargo test -p box-app -- --ignored snapshot`.
+egui_kittest = { version = "0.37", features = ["wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true

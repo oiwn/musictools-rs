@@ -7,6 +7,11 @@ members = [
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
+    "crates/roman-dsp",
+    "crates/box-core",
+    "crates/box-dsp",
+    "crates/box-modules",
+    "crates/box-app",
     "plugins/bogdan",
     "plugins/kirya",
 ]
@@ -17,6 +22,11 @@ default-members = [
     "crates/bogdan-dsp",
     "crates/kirya-dsp",
     "crates/igorek-dsp",
+    "crates/roman-dsp",
+    "crates/box-core",
+    "crates/box-dsp",
+    "crates/box-modules",
+    "crates/box-app",
     "plugins/bogdan",
     "plugins/kirya",
 ]
@@ -35,6 +45,15 @@ kirya-dsp = { path = "crates/kirya-dsp" }
 igorek-dsp = { path = "crates/igorek-dsp" }
 neon-ui = { path = "crates/neon-ui" }
 audio-harness = { path = "crates/audio-harness" }
+box-core = { path = "crates/box-core" }
+box-dsp = { path = "crates/box-dsp" }
+box-modules = { path = "crates/box-modules" }
+roman-dsp = { path = "crates/roman-dsp" }
+cpal = "0.18"
+eframe = "0.37"
+rtrb = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 realfft = "3"
 hound = "3.5"
 rand = "0.9"

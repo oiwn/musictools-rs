@@ -4,7 +4,7 @@ status: draft
 scope: []
 created: 2026-10-29
 source: user request 2026-10-29: grid module (parked until grid foundation)
-depends: [0014-grid-foundation]
+depends: [0024-box-module-library]
 ---
 # Task: grid meters
 
@@ -37,3 +37,4 @@ Grid meters module: stereo passthrough with peak/RMS metering and a module heade
 - 2026-10-29 created: grid meters
 - 2026-10-29 set source user request 2026-10-29: grid module (parked until grid foundation)
 - 2026-10-29 set depends 0014-grid-foundation
+- 2026-10-30 set depends 0024-box-module-library

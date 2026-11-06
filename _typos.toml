@@ -1,0 +1,5 @@
+# typos configuration.
+
+[default.extend-words]
+# A user's approval quote kept verbatim in specdev task logs (2026-11-01).
+implmenet = "implmenet"

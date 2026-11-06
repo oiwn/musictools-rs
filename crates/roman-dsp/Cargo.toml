@@ -1,0 +1,17 @@
+[package]
+name = "roman-dsp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Framework-independent biquad filter DSP for Roman"
+
+[features]
+rt-audit = ["musictools-core/alloc-audit"]
+
+[dependencies]
+musictools-core = { workspace = true }
+
+[lints]
+workspace = true

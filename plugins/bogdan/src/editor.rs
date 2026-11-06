@@ -48,9 +48,9 @@ const DRIVEN_COLOR: Color32 = palette::ORANGE;
 const PROCESSED_COLOR: Color32 = palette::CYAN;
 const CEILING_COLOR: Color32 = palette::CLIP;
 
-/// Below this peak the scope shows a "waiting for audio" hint instead of a
-/// flat line that reads as a broken display.
-const SILENCE: f32 = 1.0e-4;
+/// Where the ±ceiling guides sit as a fraction of the plot's half-height;
+/// the waveform shares the extent, so driven peaks touch the guides.
+const CEILING_GUIDE_SPAN: f32 = 0.75;
 
 /// Knob width and full knob column height.
 fn knob_size() -> Vec2 {
@@ -239,7 +239,7 @@ impl BogdanEditor {
 
         let ceiling = db_to_linear(ceiling_db);
         let safe_ceiling = finite_sample(ceiling).abs().max(f32::MIN_POSITIVE);
-        let vertical_extent = safe_ceiling * 2.0;
+        let vertical_extent = safe_ceiling / CEILING_GUIDE_SPAN;
 
         painter.line_segment(
             [
@@ -256,7 +256,7 @@ impl BogdanEditor {
             palette::TEXT_MUTED,
         );
         for polarity in [-1.0_f32, 1.0] {
-            let y = sample_y(polarity * safe_ceiling, vertical_extent, plot);
+            let y = plot.center().y - polarity * CEILING_GUIDE_SPAN * plot.height() * 0.5;
             painter.line_segment(
                 [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
                 Stroke::new(1.0_f32, CEILING_COLOR.gamma_multiply(0.7)),
@@ -272,40 +272,29 @@ impl BogdanEditor {
         }
 
         let range = self.history.display_range();
-        let peak = self
-            .history
-            .frames
-            .range(range.clone())
-            .map(|frame| frame.driven.abs().max(frame.processed.abs()))
-            .fold(0.0_f32, f32::max);
-        if peak < SILENCE {
-            painter.text(
-                Pos2::new(plot.center().x, plot.center().y - 14.0),
-                Align2::CENTER_CENTER,
-                "waiting for audio",
-                FontId::proportional(11.0),
-                palette::TEXT_MUTED,
-            );
-        } else {
-            let mut driven = Vec::with_capacity(range.len());
-            let mut processed = Vec::with_capacity(range.len());
-            for (display_index, history_index) in range.enumerate() {
-                let x = sample_x(display_index, plot);
-                let frame = self.history.frames[history_index];
-                driven.push(Pos2::new(x, sample_y(frame.driven, vertical_extent, plot)));
-                processed.push(Pos2::new(
-                    x,
-                    sample_y(frame.processed, vertical_extent, plot),
-                ));
-            }
-            if driven.len() > 1 {
+        let driven = on_scale_runs(
+            range.clone().map(|index| self.history.frames[index].driven),
+            vertical_extent,
+            plot,
+        );
+        let processed = on_scale_runs(
+            range.map(|index| self.history.frames[index].processed),
+            vertical_extent,
+            plot,
+        );
+        for run in driven {
+            if run.len() > 1 {
                 painter.add(egui::Shape::line(
-                    driven,
+                    run,
                     Stroke::new(1.2_f32, DRIVEN_COLOR.gamma_multiply(0.75)),
                 ));
-                glow::glow_line_with(painter, &processed, PROCESSED_COLOR, 2, 3.0, 0.22);
+            }
+        }
+        for run in processed {
+            if run.len() > 1 {
+                glow::glow_line_with(painter, &run, PROCESSED_COLOR, 2, 3.0, 0.22);
                 painter.add(egui::Shape::line(
-                    processed,
+                    run,
                     Stroke::new(1.5_f32, PROCESSED_COLOR),
                 ));
             }
@@ -570,9 +559,40 @@ fn sample_x(index: usize, plot: Rect) -> f32 {
     plot.left() + fraction * plot.width()
 }
 
-fn sample_y(sample: f32, vertical_extent: f32, plot: Rect) -> f32 {
-    let normalized = (finite_sample(sample) / vertical_extent).clamp(-1.0, 1.0);
-    plot.center().y - normalized * plot.height() * 0.5
+/// A sample's plot y; `None` when it lies outside the vertical extent.
+fn sample_y(sample: f32, vertical_extent: f32, plot: Rect) -> Option<f32> {
+    let normalized = finite_sample(sample) / vertical_extent;
+    if normalized.abs() > 1.0 {
+        return None;
+    }
+    Some(plot.center().y - normalized * plot.height() * 0.5)
+}
+
+/// Split a trace into runs of consecutive on-scale points. Off-scale
+/// stretches are skipped, not flattened against the plot border, which
+/// would read as the signal being clipped.
+fn on_scale_runs(
+    values: impl Iterator<Item = f32>,
+    vertical_extent: f32,
+    plot: Rect,
+) -> Vec<Vec<Pos2>> {
+    let mut runs: Vec<Vec<Pos2>> = Vec::new();
+    let mut in_run = false;
+    for (display_index, value) in values.enumerate() {
+        if let Some(y) = sample_y(value, vertical_extent, plot) {
+            let point = Pos2::new(sample_x(display_index, plot), y);
+            match runs.last_mut() {
+                Some(run) if in_run => run.push(point),
+                _ => {
+                    runs.push(vec![point]);
+                    in_run = true;
+                }
+            }
+        } else {
+            in_run = false;
+        }
+    }
+    runs
 }
 
 #[cfg(test)]
@@ -662,10 +682,30 @@ mod tests {
     }
 
     #[test]
-    fn ceiling_guides_land_halfway_between_center_and_edge() {
+    fn ceiling_guides_sit_near_the_plot_edges() {
         let plot = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
 
-        assert_eq!(sample_y(0.5, 1.0, plot), 25.0);
-        assert_eq!(sample_y(-0.5, 1.0, plot), 75.0);
+        assert_eq!(sample_y(0.75, 1.0, plot), Some(12.5));
+        assert_eq!(sample_y(-0.75, 1.0, plot), Some(87.5));
+        assert_eq!(sample_y(1.5, 1.0, plot), None);
+    }
+
+    #[test]
+    fn off_scale_samples_split_the_trace_into_runs() {
+        let plot = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+
+        let split = on_scale_runs([0.2, 1.5, -1.8, 0.4].into_iter(), 1.0, plot);
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].len(), 1);
+        assert_eq!(split[0][0].y, 40.0);
+        assert_eq!(split[1].len(), 1);
+        assert_eq!(split[1][0].y, 30.0);
+
+        let joined = on_scale_runs([0.2, -0.4, 0.1].into_iter(), 1.0, plot);
+        assert_eq!(joined.len(), 1);
+        assert_eq!(
+            joined[0].iter().map(|point| point.y).collect::<Vec<_>>(),
+            [40.0, 70.0, 45.0]
+        );
     }
 }

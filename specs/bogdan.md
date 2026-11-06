@@ -61,7 +61,7 @@ The Detail cutoff is displayed through `musictools_core::format_hz`, shared with
 Dark Neon, 540×420 (up from the legacy 500×376 to give the scope room), laid out like Kirya's, every block in an exact rect from one vertical budget (asserted in tests):
 
 - **Header strip** — "PPC BOGDAN" tracked, "detail clipper · v…" in Muted, and a "?" icon button (shows "×" while open) that swaps the scope and controls for a scrolling help screen. The help copy is the `HELP` table in `editor.rs`; keep it in step with this spec.
-- **Scope** in an inset well — PROCESSED in Cyan with glow over a dimmer DRIVEN in Orange, Red ceiling guides labelled with the Ceiling in dB, a centre line. Labels sit in gutters: legend chips above, levels on the left. A silent tap shows "waiting for audio" instead of a flat line.
+- **Scope** in an inset well — PROCESSED in Cyan with glow over a dimmer DRIVEN in Orange, Red ceiling guides labelled with the Ceiling in dB, a centre line. Labels sit in gutters: legend chips above, levels on the left. Guides sit at ±75% of the plot's half-height (`CEILING_GUIDE_SPAN`), the waveform scaled to match; a silent tap idles as a flat line. Off-scale stretches of a trace are skipped (gaps), not flattened against the border, so DRIVEN never looks pre-clipped.
 - **Control band** — MODE vertical tabs, the CLIPPER knobs (Drive, Ceiling, Detail, Amount), SHAPE vertical tabs, each captioned and divided. SHAPE is disabled unless Mode is Fold.
 
 ## Gotchas / knowledge

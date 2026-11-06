@@ -1,0 +1,17 @@
+[package]
+name = "box-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "box module interface: descriptors, params, the Module trait, grid geometry"
+
+[features]
+rt-audit = ["musictools-core/alloc-audit"]
+
+[dependencies]
+musictools-core = { workspace = true }
+
+[lints]
+workspace = true

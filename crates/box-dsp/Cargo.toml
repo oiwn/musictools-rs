@@ -1,0 +1,21 @@
+[package]
+name = "box-dsp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "box patch model, graph compiler and realtime engine"
+
+[features]
+rt-audit = ["musictools-core/alloc-audit", "box-core/rt-audit"]
+
+[dependencies]
+box-core = { workspace = true }
+musictools-core = { workspace = true }
+rtrb = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
